@@ -275,6 +275,75 @@ Especialista em Google Perfil de Empresas`;
   });
 });
 
+// 3. AI Real-time Scan with Google Search Grounding API Endpoint
+app.post('/api/scan-ai', async (req, res) => {
+  const { uf, cidade, cnae, cnaeDescricao } = req.body;
+
+  if (!uf || !cidade) {
+    return res.status(400).json({ error: 'UF e Cidade são obrigatórios.' });
+  }
+
+  const segment = cnaeDescricao || 'Empresas Locais';
+
+  const prompt = `Você é um robô de inteligência de mercado especializado em SEO Local e Google Meu Negócio.
+Sua missão é realizar uma busca ativa na internet por empresas REAIS que de fato existem no município de "${cidade} - ${uf}" pertencentes ao segmento de "${segment}".
+
+Você DEVE usar a ferramenta de busca do Google (Google Search) para descobrir empresas reais atuando nessa localidade nesse segmento.
+Gere uma lista de até 10 empresas REAIS encontradas. Se não souber o CNPJ delas, simule um CNPJ válido e fictício no padrão brasileiro (XX.XXX.XXX/0001-XX).
+Para cada empresa mapeada, pesquise ou estime de forma extremamente precisa e realista os seguintes dados:
+- id: "ai_lead_" seguido de um número aleatório único
+- cnpj: CNPJ da empresa (real se souber, ou fictício formatado se não souber)
+- razaoSocial: Razão Social em maiúsculas (ex: "SILVA & SOUZA LTDA" ou "CLINICA SORRISO REAL LTDA")
+- nomeFantasia: Nome Fantasia real da empresa (ex: "Sorriso Real Odontologia")
+- uf: "${uf}"
+- cidade: "${cidade}"
+- bairro: Nome de um bairro real desse município onde a empresa se localiza
+- telefone: Telefone real ou simulado formatado com DDD
+- email: E-mail de contato real ou simulado baseado no nome (ex: contato@sorrisoreal.com.br)
+- cnaePrincipal: "${cnae || '5611-2/01'}"
+- cnaeDescricao: "${segment}"
+- dataAbertura: Data de abertura real ou estimada no formato YYYY-MM-DD
+- capitalSocial: Capital social aproximado de 10000 a 300000 (valor numérico)
+- gmbStatus: Objeto contendo:
+  - exists: true se ela possui ficha no Google Maps, false se não
+  - isClaimed: true se o perfil é reivindicado/verificado no Google Meu Negócio, false se não (um perfil sem site, sem respostas ou mal avaliado tende a não ser reivindicado)
+  - rating: nota média de 1.0 a 5.0 (0 se exists for false)
+  - reviewsCount: número de avaliações (0 se exists for false)
+  - hasWebsite: true se possui site ativo cadastrado, false se não
+  - hasPhoneNumber: true se possui telefone visível na busca, false se não
+  - photosCount: quantidade estimada de fotos publicadas (0 a 100)
+  - missingHours: true se NÃO tem horário de funcionamento cadastrado, false se tem
+  - unansweredReviewsPercentage: porcentagem de avaliações sem resposta do proprietário (0 a 100)
+
+Retorne APENAS um array JSON puro (sem Markdown como \`\`\`json ou qualquer texto explicativo antes ou depois). O JSON deve conter estritamente a lista de objetos mapeados.`;
+
+  if (ai) {
+    try {
+      const response = await ai.models.generateContent({
+        model: 'gemini-3.5-flash',
+        contents: prompt,
+        config: {
+          responseMimeType: 'application/json',
+          tools: [{ googleSearch: {} }],
+          temperature: 0.5,
+        }
+      });
+
+      const responseText = response.text;
+      if (responseText) {
+        const cleanedText = responseText.trim().replace(/^```json\s*/i, '').replace(/```\s*$/, '');
+        const parsedLeads = JSON.parse(cleanedText);
+        return res.json({ leads: parsedLeads, realTime: true });
+      }
+    } catch (apiError) {
+      console.error('Gemini AI real-time scan failed, falling back to local simulation:', apiError);
+    }
+  }
+
+  // Fallback to empty if Gemini is offline/not key
+  res.json({ leads: [], realTime: false, message: 'Revertido para simulação local por falta de API key ou falha.' });
+});
+
 // Serve frontend assets
 async function startServer() {
   // Vite dev server middleware integration

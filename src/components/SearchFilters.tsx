@@ -4,7 +4,7 @@
  */
 
 import React, { useState } from 'react';
-import { Search, MapPin, Building2, SlidersHorizontal, Plus, Briefcase, Phone, Hash } from 'lucide-react';
+import { Search, MapPin, Building2, SlidersHorizontal, Plus, Briefcase, Phone, Hash, RotateCw, Globe } from 'lucide-react';
 import { BRAZIL_STATES, CITIES_BY_STATE, SECTORS } from '../data/mockCompanies';
 import { Company, CRMStage } from '../types';
 
@@ -37,6 +37,11 @@ export default function SearchFilters({ onSearch, onAddCompany }: SearchFiltersP
   const [newGmbExists, setNewGmbExists] = useState(true);
   const [newGmbClaimed, setNewGmbClaimed] = useState(false);
   const [newRating, setNewRating] = useState('3.5');
+
+  // Express CNPJ Lookup State
+  const [cnpjExpress, setCnpjExpress] = useState('');
+  const [isExpressLoading, setIsExpressLoading] = useState(false);
+  const [expressError, setExpressError] = useState('');
 
   const handleUfChange = (uf: string) => {
     setSelectedUf(uf);
@@ -224,6 +229,100 @@ export default function SearchFilters({ onSearch, onAddCompany }: SearchFiltersP
         </div>
       </form>
 
+      {/* Compact Express CNPJ Lookup Row */}
+      <div className="border-t border-slate-100 my-4 pt-4 flex flex-col md:flex-row items-center justify-between gap-4">
+        <div className="flex items-center gap-2">
+          <span className="flex h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+          <span className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+            <Globe className="w-4 h-4 text-emerald-500" />
+            Consulta Direta Receita Federal (CNPJ Real)
+          </span>
+        </div>
+        <div className="flex items-center gap-2 w-full md:w-auto max-w-md">
+          <input
+            type="text"
+            placeholder="Digite qualquer CNPJ real (somente números)"
+            value={cnpjExpress}
+            onChange={(e) => {
+              setCnpjExpress(e.target.value.replace(/[^0-9]/g, ''));
+              setExpressError('');
+            }}
+            className="w-full px-3 py-1.5 border border-slate-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500 text-slate-800 font-mono"
+            maxLength={14}
+          />
+          <button
+            type="button"
+            onClick={async () => {
+              const cleaned = cnpjExpress.trim();
+              if (cleaned.length !== 14) {
+                setExpressError('O CNPJ deve conter exatamente 14 dígitos numéricos.');
+                return;
+              }
+              setIsExpressLoading(true);
+              setExpressError('');
+              try {
+                const res = await fetch(`https://brasilapi.com.br/api/cnpj/v1/${cleaned}`);
+                if (!res.ok) {
+                  throw new Error('CNPJ não encontrado ou limite de requisições do servidor excedido.');
+                }
+                const data = await res.json();
+                
+                // Formulate a clean company object
+                const imported: Company = {
+                  id: `cnpj_imported_${cleaned}_${Date.now()}`,
+                  cnpj: data.cnpj.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, "$1.$2.$3/$4-$5"),
+                  razaoSocial: data.razao_social || data.nome_fantasia || 'RAZÃO SOCIAL NÃO INFORMADA',
+                  nomeFantasia: data.nome_fantasia || data.razao_social || 'Empresa Sem Nome Fantasia',
+                  uf: data.uf || 'SP',
+                  cidade: data.municipio || 'São Paulo',
+                  bairro: data.bairro || 'Centro',
+                  telefone: data.telefone || '(11) 99999-9999',
+                  email: data.email || `contato@${(data.nome_fantasia || 'empresa').toLowerCase().replace(/[^a-z0-9]/g, '')}.com.br`,
+                  cnaePrincipal: data.cnae_fiscal ? String(data.cnae_fiscal) : '5611-2/01',
+                  cnaeDescricao: data.cnae_fiscal_descricao || 'Atividades Gerais',
+                  dataAbertura: data.data_inicio_atividade || new Date().toISOString().split('T')[0],
+                  capitalSocial: data.capital_social || 50000,
+                  gmbStatus: {
+                    exists: Math.random() > 0.3,
+                    isClaimed: Math.random() > 0.6,
+                    rating: parseFloat((3.0 + Math.random() * 2.0).toFixed(1)),
+                    reviewsCount: Math.floor(Math.random() * 45) + 3,
+                    hasWebsite: Math.random() > 0.5,
+                    hasPhoneNumber: true,
+                    photosCount: Math.floor(Math.random() * 12),
+                    missingHours: Math.random() > 0.5,
+                    unansweredReviewsPercentage: Math.floor(30 + Math.random() * 70)
+                  },
+                  crmStage: CRMStage.IDENTIFIED
+                };
+
+                onAddCompany(imported);
+                setCnpjExpress('');
+                alert(`Sucesso! "${imported.nomeFantasia}" foi importada da Receita Federal e inserida em sua lista de leads.`);
+              } catch (err: any) {
+                setExpressError(err.message || 'Erro ao conectar com a Receita Federal.');
+              } finally {
+                setIsExpressLoading(false);
+              }
+            }}
+            disabled={isExpressLoading}
+            className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 text-white rounded-lg text-xs font-bold transition-all shrink-0 flex items-center gap-1 cursor-pointer"
+          >
+            {isExpressLoading ? (
+              <>
+                <RotateCw className="w-3 h-3 animate-spin" />
+                Buscando...
+              </>
+            ) : (
+              'Importar da Receita'
+            )}
+          </button>
+        </div>
+      </div>
+      {expressError && (
+        <p className="text-red-500 text-[10px] font-medium text-right mt-1 animate-pulse">{expressError}</p>
+      )}
+
       {/* Manual Entry Modal */}
       {showAddModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
@@ -245,14 +344,49 @@ export default function SearchFilters({ onSearch, onAddCompany }: SearchFiltersP
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-medium text-slate-700 mb-1">CNPJ *</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="00.000.000/0001-00"
-                    value={newCnpj}
-                    onChange={(e) => setNewCnpj(e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-800"
-                  />
+                  <div className="flex gap-1.5">
+                    <input
+                      type="text"
+                      required
+                      placeholder="00000000000000"
+                      value={newCnpj}
+                      onChange={(e) => setNewCnpj(e.target.value.replace(/[^0-9]/g, ''))}
+                      className="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-800 font-mono"
+                      maxLength={14}
+                    />
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        const cleaned = newCnpj.replace(/[^0-9]/g, '');
+                        if (cleaned.length !== 14) {
+                          alert('Digite um CNPJ válido com 14 números.');
+                          return;
+                        }
+                        try {
+                          const res = await fetch(`https://brasilapi.com.br/api/cnpj/v1/${cleaned}`);
+                          if (!res.ok) throw new Error();
+                          const data = await res.json();
+                          setNewName(data.nome_fantasia || data.razao_social || '');
+                          setNewCity(data.municipio || '');
+                          setNewUf(data.uf || 'SP');
+                          setNewPhone(data.telefone || '');
+                          if (data.cnae_fiscal) {
+                            const cnaeStr = String(data.cnae_fiscal);
+                            const matchedSector = SECTORS.find(s => s.cnae.replace(/[^0-9]/g, '') === cnaeStr.replace(/[^0-9]/g, ''));
+                            if (matchedSector) {
+                              setNewSector(matchedSector.cnae);
+                            }
+                          }
+                          alert('Sucesso! Dados preenchidos automaticamente da Receita Federal.');
+                        } catch (err) {
+                          alert('Não foi possível obter dados deste CNPJ automaticamente.');
+                        }
+                      }}
+                      className="px-2.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 rounded-lg text-xs font-bold transition-all shrink-0 cursor-pointer"
+                    >
+                      Preencher
+                    </button>
+                  </div>
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-slate-700 mb-1">Nome Fantasia *</label>
