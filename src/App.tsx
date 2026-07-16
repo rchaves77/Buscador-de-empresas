@@ -23,7 +23,7 @@ import {
 } from 'lucide-react';
 
 import { Company, CRMStage, AuditReport } from './types';
-import { INITIAL_COMPANIES, generateRandomCompanies, SECTORS, CITIES_BY_STATE } from './data/mockCompanies';
+import { INITIAL_COMPANIES, SECTORS, CITIES_BY_STATE } from './data/mockCompanies';
 
 import SearchFilters from './components/SearchFilters';
 import CompanyList from './components/CompanyList';
@@ -95,47 +95,6 @@ export default function App() {
 
   const handleSearch = (filters: { query: string; uf: string; cidade: string; cnae: string; gmbFilter: string }) => {
     setActiveFilters(filters);
-
-    // Dynamic nationwide generation:
-    if (filters.uf) {
-      if (filters.cidade) {
-        // City selected: ensure we have at least 150 leads for this city
-        const localLeadsCount = companies.filter(
-          c => c.uf === filters.uf && c.cidade.toLowerCase() === filters.cidade.toLowerCase()
-        ).length;
-
-        if (localLeadsCount < 60) {
-          const needed = 150 - localLeadsCount;
-          const generated = generateRandomCompanies(filters.uf, filters.cidade, needed);
-          const updated = [...companies, ...generated];
-          setCompanies(updated);
-          saveToStorage(updated, crmCompanyIds);
-        }
-      } else {
-        // State selected but no city: populate all cities of this state to make the list populated instantly!
-        const stateCities = CITIES_BY_STATE[filters.uf] || [];
-        let updated = [...companies];
-        let changed = false;
-
-        for (const city of stateCities) {
-          const count = updated.filter(
-            c => c.uf === filters.uf && c.cidade.toLowerCase() === city.toLowerCase()
-          ).length;
-
-          if (count < 30) {
-            const needed = 40 - count;
-            const generated = generateRandomCompanies(filters.uf, city, needed);
-            updated = [...updated, ...generated];
-            changed = true;
-          }
-        }
-
-        if (changed) {
-          setCompanies(updated);
-          saveToStorage(updated, crmCompanyIds);
-        }
-      }
-    }
   };
 
   const handleAiScan = async () => {
@@ -168,31 +127,14 @@ export default function App() {
         saveToStorage(updated, crmCompanyIds);
         alert(`Varredura concluída! Encontramos ${data.leads.length} empresas REAIS na internet de "${activeFilters.cidade} - ${activeFilters.uf}" utilizando o Google Search do Gemini.`);
       } else {
-        // Fallback generator
-        const fallbackCount = 20;
-        const generated = generateRandomCompanies(activeFilters.uf, activeFilters.cidade, fallbackCount);
-        const updated = [...generated, ...companies];
-        setCompanies(updated);
-        saveToStorage(updated, crmCompanyIds);
-        alert(`Varredura de IA finalizada. ${fallbackCount} novos leads qualificados e realistas foram mapeados para você nesta região.`);
+        alert('Varredura de IA finalizada. Nenhuma nova empresa real foi localizada na internet para esta região neste momento.');
       }
     } catch (err) {
       console.error(err);
-      alert('Erro na conexão com a inteligência artificial. Carregando novos leads da região de forma simulada local...');
-      const generated = generateRandomCompanies(activeFilters.uf, activeFilters.cidade, 20);
-      const updated = [...generated, ...companies];
-      setCompanies(updated);
-      saveToStorage(updated, crmCompanyIds);
+      alert('Erro na conexão com a inteligência artificial para varredura real-time. Por favor, verifique sua chave API do Gemini nas Configurações.');
     } finally {
       setIsScanningAi(false);
     }
-  };
-
-  const handleGenerateMoreLeads = (uf: string, city: string, count: number) => {
-    const generated = generateRandomCompanies(uf, city, count);
-    const updated = [...companies, ...generated];
-    setCompanies(updated);
-    saveToStorage(updated, crmCompanyIds);
   };
 
   const handleAddCompany = (newCompany: Company) => {
@@ -537,17 +479,6 @@ export default function App() {
                           Escanear com IA Real (Web)
                         </>
                       )}
-                    </button>
-                    
-                    <button
-                      onClick={() => {
-                        handleGenerateMoreLeads(activeFilters.uf, activeFilters.cidade, 100);
-                      }}
-                      className="flex items-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold rounded-xl text-xs transition-all shadow-xs shrink-0 hover:scale-[1.02] active:scale-[0.98] cursor-pointer"
-                      id="btn-scan-more"
-                    >
-                      <Zap className="w-3.5 h-3.5 text-amber-300 fill-amber-300" />
-                      Escanear +100 Leads (Rápido)
                     </button>
                   </div>
                 )}
