@@ -100,8 +100,8 @@ export default function SearchFilters({ onSearch, onAddCompany, onAddCompanies }
       const content = event.target?.result as string;
       if (!content) return;
 
-      // Extract raw digits of lengths matching 14 digits or formatted CNPJs
-      const regex = /\b\d{2}\.?\d{3}\.?\d{3}\/?\d{4}-?\d{2}\b/g;
+      // Extract anything resembling raw or formatted CNPJs (sequence of digits, dots, slashes, hyphens of length 14 to 18)
+      const regex = /[\d\.\/\-]{14,18}/g;
       const matches = content.match(regex) || [];
       
       // Clean up duplicates and keep only 14 digits
@@ -147,7 +147,7 @@ export default function SearchFilters({ onSearch, onAddCompany, onAddCompanies }
       const cnpj = fileCnpjs[i];
 
       // Update current log to loading
-      setBatchLogs(prev => prev.map((l, idx) => idx === i ? { ...l, status: 'loading', label: 'Consultando Receita...' } : l));
+      setBatchLogs(prev => prev.map((l, idx) => idx === i ? { ...l, status: 'loading', label: 'Consultando Receita Federal...' } : l));
 
       // 1.2 second delay to prevent being blocked by public API
       if (i > 0) {
@@ -190,6 +190,37 @@ export default function SearchFilters({ onSearch, onAddCompany, onAddCompanies }
           crmStage: CRMStage.IDENTIFIED
         };
 
+        // Real-time contact enrichment via Google Search
+        try {
+          setBatchLogs(prev => prev.map((l, idx) => idx === i ? { ...l, label: 'Enriquecendo contatos com IA...' } : l));
+          const enrichRes = await fetch('/api/enrich-cnpj', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              cnpj,
+              name: lead.nomeFantasia,
+              uf: lead.uf,
+              city: lead.cidade
+            })
+          });
+          if (enrichRes.ok) {
+            const enrichData = await enrichRes.json();
+            if (enrichData && !enrichData.error) {
+              if (enrichData.telefone) lead.telefone = enrichData.telefone;
+              if (enrichData.email) lead.email = enrichData.email;
+              if (enrichData.bairro) lead.bairro = enrichData.bairro;
+              if (enrichData.nomeFantasia && enrichData.nomeFantasia !== 'Não informado') {
+                lead.nomeFantasia = enrichData.nomeFantasia;
+              }
+              if (enrichData.website) {
+                lead.gmbStatus.hasWebsite = true;
+              }
+            }
+          }
+        } catch (enrichErr) {
+          console.error('Falha ao enriquecer lote com IA:', enrichErr);
+        }
+
         accumulatedLeads.push(lead);
         setBatchLogs(prev => prev.map((l, idx) => idx === i ? { ...l, status: 'success', label: lead.nomeFantasia } : l));
       } catch (err) {
@@ -229,6 +260,36 @@ export default function SearchFilters({ onSearch, onAddCompany, onAddCompanies }
           },
           crmStage: CRMStage.IDENTIFIED
         };
+
+        // Even with fallback, we try to enrich contact details if possible!
+        try {
+          const enrichRes = await fetch('/api/enrich-cnpj', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              cnpj,
+              name: fallbackLead.nomeFantasia,
+              uf: fallbackLead.uf,
+              city: fallbackLead.cidade
+            })
+          });
+          if (enrichRes.ok) {
+            const enrichData = await enrichRes.json();
+            if (enrichData && !enrichData.error) {
+              if (enrichData.telefone) fallbackLead.telefone = enrichData.telefone;
+              if (enrichData.email) fallbackLead.email = enrichData.email;
+              if (enrichData.bairro) fallbackLead.bairro = enrichData.bairro;
+              if (enrichData.nomeFantasia && enrichData.nomeFantasia !== 'Não informado') {
+                fallbackLead.nomeFantasia = enrichData.nomeFantasia;
+              }
+              if (enrichData.website) {
+                fallbackLead.gmbStatus.hasWebsite = true;
+              }
+            }
+          }
+        } catch (enrichErr) {
+          console.error('Falha ao enriquecer fallback com IA:', enrichErr);
+        }
 
         accumulatedLeads.push(fallbackLead);
         setBatchLogs(prev => prev.map((l, idx) => idx === i ? { ...l, status: 'fallback', label: `${fallbackLead.nomeFantasia} (Mapeado Local)` } : l));
@@ -420,27 +481,27 @@ export default function SearchFilters({ onSearch, onAddCompany, onAddCompanies }
           <span className="flex h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
           <span className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
             <Globe className="w-4 h-4 text-emerald-500" />
-            Consulta Direta Receita Federal (CNPJ Real)
+            Consulta Direta Receita Federal + Enriquecimento IA (CNPJ Real)
           </span>
         </div>
         <div className="flex items-center gap-2 w-full md:w-auto max-w-md">
           <input
             type="text"
-            placeholder="Digite qualquer CNPJ real (somente números)"
+            placeholder="Digite CNPJ (ex: 12.345.678/0001-90)"
             value={cnpjExpress}
             onChange={(e) => {
-              setCnpjExpress(e.target.value.replace(/[^0-9]/g, ''));
+              setCnpjExpress(e.target.value);
               setExpressError('');
             }}
             className="w-full px-3 py-1.5 border border-slate-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500 text-slate-800 font-mono"
-            maxLength={14}
+            maxLength={18}
           />
           <button
             type="button"
             onClick={async () => {
-              const cleaned = cnpjExpress.trim();
+              const cleaned = cnpjExpress.replace(/\D/g, '');
               if (cleaned.length !== 14) {
-                setExpressError('O CNPJ deve conter exatamente 14 dígitos numéricos.');
+                setExpressError('O CNPJ deve conter exatamente 14 números (ex: 12.345.678/0001-90).');
                 return;
               }
               setIsExpressLoading(true);
@@ -448,7 +509,7 @@ export default function SearchFilters({ onSearch, onAddCompany, onAddCompanies }
               try {
                 const res = await fetch(`https://brasilapi.com.br/api/cnpj/v1/${cleaned}`);
                 if (!res.ok) {
-                  throw new Error('CNPJ não encontrado ou limite de requisições do servidor excedido.');
+                  throw new Error('CNPJ não encontrado ou limite de requisições do servidor de CNPJ excedido.');
                 }
                 const data = await res.json();
                 
@@ -481,9 +542,39 @@ export default function SearchFilters({ onSearch, onAddCompany, onAddCompanies }
                   crmStage: CRMStage.IDENTIFIED
                 };
 
+                // Enrich with real web search contact info!
+                try {
+                  const enrichRes = await fetch('/api/enrich-cnpj', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      cnpj: cleaned,
+                      name: imported.nomeFantasia,
+                      uf: imported.uf,
+                      city: imported.cidade
+                    })
+                  });
+                  if (enrichRes.ok) {
+                    const enrichData = await enrichRes.json();
+                    if (enrichData && !enrichData.error) {
+                      if (enrichData.telefone) imported.telefone = enrichData.telefone;
+                      if (enrichData.email) imported.email = enrichData.email;
+                      if (enrichData.bairro) imported.bairro = enrichData.bairro;
+                      if (enrichData.nomeFantasia && enrichData.nomeFantasia !== 'Não informado') {
+                        imported.nomeFantasia = enrichData.nomeFantasia;
+                      }
+                      if (enrichData.website) {
+                        imported.gmbStatus.hasWebsite = true;
+                      }
+                    }
+                  }
+                } catch (enrichErr) {
+                  console.error('Falha no enriquecimento de contatos real-time:', enrichErr);
+                }
+
                 onAddCompany(imported);
                 setCnpjExpress('');
-                alert(`Sucesso! "${imported.nomeFantasia}" foi importada da Receita Federal e inserida em sua lista de leads.`);
+                alert(`Sucesso! "${imported.nomeFantasia}" foi importada e enriquecida com contatos reais da web!`);
               } catch (err: any) {
                 setExpressError(err.message || 'Erro ao conectar com a Receita Federal.');
               } finally {

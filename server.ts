@@ -344,6 +344,65 @@ Retorne APENAS um array JSON puro (sem Markdown como \`\`\`json ou qualquer text
   res.json({ leads: [], realTime: false, message: 'Revertido para simulação local por falta de API key ou falha.' });
 });
 
+// 4. AI Real-time CNPJ Contact Enrichment API Endpoint
+app.post('/api/enrich-cnpj', async (req, res) => {
+  const { cnpj, name, uf, city } = req.body;
+
+  if (!cnpj) {
+    return res.status(400).json({ error: 'CNPJ é obrigatório.' });
+  }
+
+  const prompt = `Você é um robô avançado de enriquecimento de dados comerciais e SEO Local.
+Sua missão é realizar uma busca minuciosa na internet real utilizando o Google Search para encontrar informações de CONTATO ATIVAS E REAIS (Telefones comerciais, WhatsApps reais, e-mails de contato ativos e o site oficial ou perfil em redes sociais como Instagram, Facebook, LinkedIn) para a seguinte empresa:
+- CNPJ: ${cnpj}
+- Nome sugerido: ${name || 'Não informado'}
+- Cidade/UF: ${city || ''} - ${uf || ''}
+
+ATENÇÃO CRÍTICA:
+1. O usuário precisa de NÚMEROS REAIS E VERDADEIROS obtidos na internet (não simulações fakes baseadas em padrão). Procure pelo CNPJ no Google, ache o site oficial da empresa, perfil de Instagram, Facebook ou outras listagens públicas (como Guia Mais, Telelistas, ou mapas).
+2. Tente extrair o telefone e WhatsApp real com o DDD. Formate no padrão brasileiro (XX) XXXXX-XXXX ou (XX) XXXX-XXXX.
+3. Se não encontrar o e-mail real, retorne vazio ou busque o padrão correto da empresa.
+4. Se encontrar o site oficial ou perfil de Instagram/Facebook, preencha o campo "website".
+5. Extraia também o Bairro correto onde a empresa está sediada atualmente se disponível.
+
+Retorne APENAS um objeto JSON com o seguinte formato exato (sem Markdown \`\`\`json ou explicações, apenas o JSON puro):
+{
+  "telefone": "<telefone real com DDD encontrado, ou vazio se não encontrar nada real>",
+  "email": "<email real de contato encontrado, ou vazio se não encontrar nada real>",
+  "website": "<site oficial ou link de Instagram/Facebook encontrado>",
+  "bairro": "<bairro real encontrado>",
+  "cidade": "<cidade real encontrada>",
+  "uf": "<UF real>",
+  "nomeFantasia": "<Nome Fantasia comercial real da empresa>",
+  "source_urls": ["<lista de URLs de onde você encontrou essas informações reais>"]
+}`;
+
+  if (ai) {
+    try {
+      const response = await ai.models.generateContent({
+        model: 'gemini-3.5-flash',
+        contents: prompt,
+        config: {
+          responseMimeType: 'application/json',
+          tools: [{ googleSearch: {} }],
+          temperature: 0.2,
+        }
+      });
+
+      const responseText = response.text;
+      if (responseText) {
+        const cleanedText = responseText.trim().replace(/^```json\s*/i, '').replace(/```\s*$/, '');
+        const enrichedData = JSON.parse(cleanedText);
+        return res.json(enrichedData);
+      }
+    } catch (apiError) {
+      console.error('Gemini real-time CNPJ enrichment failed:', apiError);
+    }
+  }
+
+  res.json({ error: 'Nenhum resultado real retornado pelo buscador de IA ou API key não configurada.' });
+});
+
 // Serve frontend assets
 async function startServer() {
   // Vite dev server middleware integration
