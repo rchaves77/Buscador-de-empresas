@@ -403,6 +403,9 @@ Retorne APENAS um objeto JSON com o seguinte formato exato (sem Markdown \`\`\`j
   res.json({ error: 'Nenhum resultado real retornado pelo buscador de IA ou API key não configurada.' });
 });
 
+// Export app for serverless deployment (e.g. Vercel)
+export { app };
+
 // Serve frontend assets
 async function startServer() {
   // Vite dev server middleware integration
@@ -428,4 +431,6 @@ async function startServer() {
   });
 }
 
-startServer();
+if (!process.env.VERCEL) {
+  startServer();
+}
