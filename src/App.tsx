@@ -207,6 +207,18 @@ export default function App() {
     saveToStorage(updated, newCrmIds);
   };
 
+  const handleAddCompanies = (newCompanies: Company[]) => {
+    const updated = [...newCompanies, ...companies];
+    setCompanies(updated);
+    
+    // Auto-add all imported companies to CRM as identified leads
+    const newCrmIds = new Set<string>(crmCompanyIds);
+    newCompanies.forEach(c => newCrmIds.add(c.id));
+    setCrmCompanyIds(newCrmIds);
+
+    saveToStorage(updated, newCrmIds);
+  };
+
   const handleAddToCrm = (companyId: string) => {
     const newCrmIds = new Set<string>(crmCompanyIds);
     newCrmIds.add(companyId);
@@ -495,7 +507,7 @@ export default function App() {
             />
           ) : activeTab === 'search' ? (
             <div className="space-y-6">
-              <SearchFilters onSearch={handleSearch} onAddCompany={handleAddCompany} />
+              <SearchFilters onSearch={handleSearch} onAddCompany={handleAddCompany} onAddCompanies={handleAddCompanies} />
               
               <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-2xs flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                 <div className="space-y-1">

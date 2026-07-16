@@ -16,11 +16,11 @@ interface CompanyListProps {
 
 export default function CompanyList({ companies, onSelectCompany, onAddToCrm, crmCompanyIds }: CompanyListProps) {
   const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 8;
+  const [itemsPerPage, setItemsPerPage] = useState<number>(8);
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [companies]);
+  }, [companies, itemsPerPage]);
 
   const totalPages = Math.ceil(companies.length / itemsPerPage);
   const paginatedCompanies = companies.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
@@ -31,13 +31,35 @@ export default function CompanyList({ companies, onSelectCompany, onAddToCrm, cr
 
   return (
     <div className="bg-white rounded-xl border border-slate-150 shadow-xs overflow-hidden" id="company-list-wrapper">
-      <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50">
-        <h3 className="font-semibold text-slate-900 text-sm flex items-center gap-2">
-          Leads Identificados ({companies.length})
-        </h3>
-        <p className="text-xs text-slate-500">
-          Mostrando {Math.min(companies.length, (currentPage - 1) * itemsPerPage + 1)}-{Math.min(companies.length, currentPage * itemsPerPage)} de {companies.length}
-        </p>
+      <div className="px-6 py-4 border-b border-slate-100 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-slate-50">
+        <div>
+          <h3 className="font-semibold text-slate-900 text-sm flex items-center gap-2">
+            Leads Identificados ({companies.length})
+          </h3>
+          <p className="text-xs text-slate-400 mt-0.5">
+            Mostrando {companies.length === 0 ? 0 : (currentPage - 1) * itemsPerPage + 1}-{Math.min(companies.length, currentPage * itemsPerPage)} de {companies.length}
+          </p>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <label htmlFor="items-per-page" className="text-xs text-slate-500 font-medium">Visualizar:</label>
+          <select
+            id="items-per-page"
+            value={itemsPerPage === 1000000 ? 'all' : itemsPerPage}
+            onChange={(e) => {
+              const val = e.target.value;
+              setItemsPerPage(val === 'all' ? 1000000 : parseInt(val));
+            }}
+            className="text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 font-medium"
+          >
+            <option value="8">8 leads</option>
+            <option value="20">20 leads</option>
+            <option value="50">50 leads</option>
+            <option value="100">100 leads</option>
+            <option value="250">250 leads</option>
+            <option value="all">Mostrar Todos</option>
+          </select>
+        </div>
       </div>
 
       {companies.length === 0 ? (
