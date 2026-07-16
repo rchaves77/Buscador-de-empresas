@@ -95,19 +95,27 @@ export default function App() {
 
     // Dynamic nationwide generation:
     // If user selects a UF and a City, check if we have any company leads for that combination.
-    // If not, automatically generate 12-15 realistic, highly localized leads dynamically.
+    // If there are less than 60 leads, automatically generate a rich database of 150 localized leads dynamically.
     if (filters.uf && filters.cidade) {
-      const hasLocalLeads = companies.some(
+      const localLeadsCount = companies.filter(
         c => c.uf === filters.uf && c.cidade.toLowerCase() === filters.cidade.toLowerCase()
-      );
+      ).length;
 
-      if (!hasLocalLeads) {
-        const generated = generateRandomCompanies(filters.uf, filters.cidade, 12);
+      if (localLeadsCount < 60) {
+        const needed = 150 - localLeadsCount;
+        const generated = generateRandomCompanies(filters.uf, filters.cidade, needed);
         const updated = [...companies, ...generated];
         setCompanies(updated);
         saveToStorage(updated, crmCompanyIds);
       }
     }
+  };
+
+  const handleGenerateMoreLeads = (uf: string, city: string, count: number) => {
+    const generated = generateRandomCompanies(uf, city, count);
+    const updated = [...companies, ...generated];
+    setCompanies(updated);
+    saveToStorage(updated, crmCompanyIds);
   };
 
   const handleAddCompany = (newCompany: Company) => {
@@ -412,11 +420,28 @@ export default function App() {
             <div className="space-y-6">
               <SearchFilters onSearch={handleSearch} onAddCompany={handleAddCompany} />
               
-              <div className="flex flex-col gap-1.5 mb-2">
-                <span className="text-xs text-slate-500 font-medium uppercase tracking-wide">Resultados da Varredura</span>
-                <p className="text-xs text-slate-400">
-                  Dica comercial: Procure por empresas marcadas como <strong>"Não Reivindicada"</strong>. Você pode reivindicá-las gratuitamente no Google Meu Negócio em nome deles e cobrar de R$ 300 a R$ 1.500 pela estruturação de SEO.
-                </p>
+              <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-2xs flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                <div className="space-y-1">
+                  <span className="text-xs text-indigo-600 font-bold uppercase tracking-wider flex items-center gap-1.5">
+                    <span className="h-2 w-2 rounded-full bg-indigo-600 animate-pulse" />
+                    Varredura Ativa • {activeFilters.cidade ? `${activeFilters.cidade} - ${activeFilters.uf}` : 'Brasil'}
+                  </span>
+                  <p className="text-xs text-slate-500 leading-normal max-w-2xl">
+                    Foram mapeados <strong className="text-slate-900">{filteredCompanies.length}</strong> leads com esses filtros. Dica comercial: Procure perfis <strong>"Não Reivindicados"</strong> para oferecer estruturação de SEO de R$ 300 a R$ 1.500.
+                  </p>
+                </div>
+                {activeFilters.uf && activeFilters.cidade && (
+                  <button
+                    onClick={() => {
+                      handleGenerateMoreLeads(activeFilters.uf, activeFilters.cidade, 100);
+                    }}
+                    className="flex items-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold rounded-xl text-xs transition-all shadow-xs shrink-0 hover:scale-[1.02] active:scale-[0.98]"
+                    id="btn-scan-more"
+                  >
+                    <Zap className="w-3.5 h-3.5 text-amber-300 fill-amber-300" />
+                    Escanear +100 Leads Locais
+                  </button>
+                )}
               </div>
 
               <CompanyList

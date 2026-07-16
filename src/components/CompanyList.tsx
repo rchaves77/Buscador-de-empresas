@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Eye, ShieldAlert, ShieldCheck, MapPinOff, AlertTriangle, Star, CheckCircle, ChevronRight, Send, HelpCircle } from 'lucide-react';
 import { Company, CRMStage } from '../types';
 
@@ -17,6 +17,10 @@ interface CompanyListProps {
 export default function CompanyList({ companies, onSelectCompany, onAddToCrm, crmCompanyIds }: CompanyListProps) {
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 8;
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [companies]);
 
   const totalPages = Math.ceil(companies.length / itemsPerPage);
   const paginatedCompanies = companies.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
