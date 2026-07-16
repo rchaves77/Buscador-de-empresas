@@ -1,0 +1,6 @@
+{
+  "name": "Localizador e Auditor de Perfis de Empresas",
+  "description": "Plataforma B2B para buscar dados públicos de empresas por estado/cidade, auditar perfis de empresas do Google (GBP) e gerar abordagens personalizadas via WhatsApp.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

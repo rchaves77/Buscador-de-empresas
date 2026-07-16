@@ -1,0 +1,447 @@
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+import React, { useState, useEffect } from 'react';
+import {
+  BarChart3,
+  Search,
+  FileSpreadsheet,
+  Zap,
+  Building2,
+  Phone,
+  Settings,
+  HelpCircle,
+  TrendingUp,
+  MapPin,
+  CheckCircle,
+  Menu,
+  X
+} from 'lucide-react';
+
+import { Company, CRMStage, AuditReport } from './types';
+import { INITIAL_COMPANIES, generateRandomCompanies } from './data/mockCompanies';
+
+import SearchFilters from './components/SearchFilters';
+import CompanyList from './components/CompanyList';
+import CompanyAudit from './components/CompanyAudit';
+import CRMBoard from './components/CRMBoard';
+import CampaignDashboard from './components/CampaignDashboard';
+import SaaSMonetization from './components/SaaSMonetization';
+
+export default function App() {
+  const [companies, setCompanies] = useState<Company[]>([]);
+  const [crmCompanyIds, setCrmCompanyIds] = useState<Set<string>>(new Set());
+  const [selectedCompany, setSelectedCompany] = useState<Company | null>(null);
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'search' | 'crm' | 'saas'>('search');
+  const [savedAudits, setSavedAudits] = useState<Record<string, AuditReport>>({});
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  // Active filters for company listing
+  const [activeFilters, setActiveFilters] = useState({
+    query: '',
+    uf: '',
+    cidade: '',
+    cnae: '',
+    gmbFilter: 'all'
+  });
+
+  // Load state from localStorage on mount
+  useEffect(() => {
+    const storedCompanies = localStorage.getItem('gmb_prospector_companies');
+    const storedCrmIds = localStorage.getItem('gmb_prospector_crm_ids');
+    const storedAudits = localStorage.getItem('gmb_prospector_audits');
+
+    if (storedCompanies) {
+      try {
+        setCompanies(JSON.parse(storedCompanies));
+      } catch (e) {
+        setCompanies(INITIAL_COMPANIES);
+      }
+    } else {
+      setCompanies(INITIAL_COMPANIES);
+    }
+
+    if (storedCrmIds) {
+      try {
+        const parsed = JSON.parse(storedCrmIds);
+        if (Array.isArray(parsed)) {
+          setCrmCompanyIds(new Set<string>(parsed as string[]));
+        }
+      } catch (e) {
+        setCrmCompanyIds(new Set<string>());
+      }
+    }
+
+    if (storedAudits) {
+      try {
+        setSavedAudits(JSON.parse(storedAudits));
+      } catch (e) {
+        setSavedAudits({});
+      }
+    }
+  }, []);
+
+  // Save state to localStorage when changes occur
+  const saveToStorage = (updatedCompanies: Company[], updatedCrmIds: Set<string>, updatedAudits = savedAudits) => {
+    localStorage.setItem('gmb_prospector_companies', JSON.stringify(updatedCompanies));
+    localStorage.setItem('gmb_prospector_crm_ids', JSON.stringify(Array.from(updatedCrmIds)));
+    localStorage.setItem('gmb_prospector_audits', JSON.stringify(updatedAudits));
+  };
+
+  const handleSearch = (filters: { query: string; uf: string; cidade: string; cnae: string; gmbFilter: string }) => {
+    setActiveFilters(filters);
+
+    // Dynamic nationwide generation:
+    // If user selects a UF and a City, check if we have any company leads for that combination.
+    // If not, automatically generate 12-15 realistic, highly localized leads dynamically.
+    if (filters.uf && filters.cidade) {
+      const hasLocalLeads = companies.some(
+        c => c.uf === filters.uf && c.cidade.toLowerCase() === filters.cidade.toLowerCase()
+      );
+
+      if (!hasLocalLeads) {
+        const generated = generateRandomCompanies(filters.uf, filters.cidade, 12);
+        const updated = [...companies, ...generated];
+        setCompanies(updated);
+        saveToStorage(updated, crmCompanyIds);
+      }
+    }
+  };
+
+  const handleAddCompany = (newCompany: Company) => {
+    const updated = [newCompany, ...companies];
+    setCompanies(updated);
+    
+    // Auto-add manually added companies to CRM
+    const newCrmIds = new Set<string>(crmCompanyIds);
+    newCrmIds.add(newCompany.id);
+    setCrmCompanyIds(newCrmIds);
+
+    saveToStorage(updated, newCrmIds);
+  };
+
+  const handleAddToCrm = (companyId: string) => {
+    const newCrmIds = new Set<string>(crmCompanyIds);
+    newCrmIds.add(companyId);
+    setCrmCompanyIds(newCrmIds);
+
+    const updatedCompanies = companies.map(c => {
+      if (c.id === companyId) {
+        return { ...c, crmStage: CRMStage.IDENTIFIED };
+      }
+      return c;
+    });
+
+    setCompanies(updatedCompanies);
+    saveToStorage(updatedCompanies, newCrmIds);
+  };
+
+  const handleRemoveFromCrm = (companyId: string) => {
+    const newCrmIds = new Set<string>(crmCompanyIds);
+    newCrmIds.delete(companyId);
+    setCrmCompanyIds(newCrmIds);
+
+    const updatedCompanies = companies.map(c => {
+      if (c.id === companyId) {
+        return { ...c, crmStage: CRMStage.IDENTIFIED }; // Reset back to raw state
+      }
+      return c;
+    });
+
+    setCompanies(updatedCompanies);
+    saveToStorage(updatedCompanies, newCrmIds);
+  };
+
+  const handleMoveCrmStage = (companyId: string, currentStage: CRMStage, direction: 'forward' | 'backward') => {
+    const STAGES = [
+      CRMStage.IDENTIFIED,
+      CRMStage.INITIAL_CONTACT,
+      CRMStage.AUDIT_SENT,
+      CRMStage.NEGOTIATING,
+      CRMStage.CLOSED_WON,
+      CRMStage.CLOSED_LOST
+    ];
+
+    const currentIndex = STAGES.indexOf(currentStage);
+    let nextIndex = currentIndex;
+
+    if (direction === 'forward' && currentIndex < STAGES.length - 2) {
+      // Don't auto-move to CLOSED_LOST, move to WON
+      nextIndex = currentIndex + 1;
+    } else if (direction === 'backward' && currentIndex > 0) {
+      nextIndex = currentIndex - 1;
+    }
+
+    const nextStage = STAGES[nextIndex];
+
+    const updatedCompanies = companies.map(c => {
+      if (c.id === companyId) {
+        return { ...c, crmStage: nextStage };
+      }
+      return c;
+    });
+
+    setCompanies(updatedCompanies);
+    saveToStorage(updatedCompanies, crmCompanyIds);
+  };
+
+  const handleUpdateCompanyStageDirectly = (companyId: string, stageString: string) => {
+    const updatedCompanies = companies.map(c => {
+      if (c.id === companyId) {
+        return { ...c, crmStage: stageString as CRMStage };
+      }
+      return c;
+    });
+    setCompanies(updatedCompanies);
+    saveToStorage(updatedCompanies, crmCompanyIds);
+  };
+
+  const handleUpdateNotes = (companyId: string, notes: string) => {
+    const updatedCompanies = companies.map(c => {
+      if (c.id === companyId) {
+        return { ...c, notes };
+      }
+      return c;
+    });
+    setCompanies(updatedCompanies);
+    saveToStorage(updatedCompanies, crmCompanyIds);
+  };
+
+  const handleSaveAudit = (audit: AuditReport) => {
+    const updatedAudits = { ...savedAudits, [audit.companyId]: audit };
+    setSavedAudits(updatedAudits);
+    
+    // Also move stage in CRM to "Audit Sent"
+    const updatedCompanies = companies.map(c => {
+      if (c.id === audit.companyId) {
+        return { ...c, crmStage: CRMStage.AUDIT_SENT };
+      }
+      return c;
+    });
+
+    setCompanies(updatedCompanies);
+    saveToStorage(updatedCompanies, crmCompanyIds, updatedAudits);
+  };
+
+  // Filtered companies based on active state of filters
+  const filteredCompanies = companies.filter((company) => {
+    // 1. Text filter
+    if (activeFilters.query) {
+      const q = activeFilters.query.toLowerCase().replace(/[\./-]/g, '');
+      const compCnpj = company.cnpj.replace(/[\./-]/g, '');
+      const name = (company.nomeFantasia || '').toLowerCase();
+      const social = (company.razaoSocial || '').toLowerCase();
+
+      if (!name.includes(q) && !social.includes(q) && !compCnpj.includes(q)) {
+        return false;
+      }
+    }
+
+    // 2. State filter
+    if (activeFilters.uf && company.uf !== activeFilters.uf) {
+      return false;
+    }
+
+    // 3. City filter
+    if (activeFilters.cidade && company.cidade.toLowerCase() !== activeFilters.cidade.toLowerCase()) {
+      return false;
+    }
+
+    // 4. CNAE filter
+    if (activeFilters.cnae && company.cnaePrincipal !== activeFilters.cnae) {
+      return false;
+    }
+
+    // 5. GMB Health Health check status filter
+    if (activeFilters.gmbFilter !== 'all') {
+      const { exists, isClaimed, rating, hasWebsite, unansweredReviewsPercentage } = company.gmbStatus;
+
+      if (activeFilters.gmbFilter === 'unclaimed' && (!exists || isClaimed)) return false;
+      if (activeFilters.gmbFilter === 'not_exist' && exists) return false;
+      if (activeFilters.gmbFilter === 'low_rating' && (!exists || rating >= 4.0 || rating === 0)) return false;
+      if (activeFilters.gmbFilter === 'no_website' && (!exists || hasWebsite)) return false;
+      if (activeFilters.gmbFilter === 'ignored_reviews' && (!exists || unansweredReviewsPercentage < 50)) return false;
+    }
+
+    return true;
+  });
+
+  return (
+    <div className="min-h-screen bg-slate-50 flex" id="applet-root">
+      {/* Navigation Sidebar */}
+      <aside className={`fixed inset-y-0 left-0 z-40 w-64 bg-slate-900 text-slate-300 transform ${
+        sidebarOpen ? 'translate-x-0' : '-translate-x-full'
+      } lg:translate-x-0 lg:static transition-transform duration-200 ease-in-out flex flex-col justify-between border-r border-slate-950 shadow-lg`}>
+        <div>
+          {/* Brand Logo */}
+          <div className="px-6 py-5 bg-slate-950 border-b border-slate-800 flex items-center justify-between">
+            <div className="flex items-center gap-2.5">
+              <div className="p-1.5 bg-indigo-600 rounded-lg text-white">
+                <Zap className="w-5 h-5 fill-current" />
+              </div>
+              <div>
+                <span className="font-extrabold text-white text-sm tracking-wide">GMB Prospector</span>
+                <span className="text-[10px] text-indigo-400 block font-semibold leading-none">B2B OTIMIZAÇÃO</span>
+              </div>
+            </div>
+            <button className="lg:hidden p-1 text-slate-400 hover:text-white" onClick={() => setSidebarOpen(false)}>
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+
+          {/* Nav links */}
+          <nav className="p-4 space-y-1.5">
+            <button
+              onClick={() => {
+                setSelectedCompany(null);
+                setActiveTab('search');
+                setSidebarOpen(false);
+              }}
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold transition-all ${
+                activeTab === 'search' && !selectedCompany
+                  ? 'bg-indigo-600 text-white shadow-xs'
+                  : 'hover:bg-slate-800 hover:text-white text-slate-400'
+              }`}
+            >
+              <Search className="w-4.5 h-4.5" />
+              Buscador de Leads CNPJ
+            </button>
+
+            <button
+              onClick={() => {
+                setSelectedCompany(null);
+                setActiveTab('crm');
+                setSidebarOpen(false);
+              }}
+              className={`w-full flex items-center justify-between px-4 py-3 rounded-xl text-xs font-bold transition-all ${
+                activeTab === 'crm' && !selectedCompany
+                  ? 'bg-indigo-600 text-white shadow-xs'
+                  : 'hover:bg-slate-800 hover:text-white text-slate-400'
+              }`}
+            >
+              <span className="flex items-center gap-3">
+                <FileSpreadsheet className="w-4.5 h-4.5" />
+                CRM & Funil de Vendas
+              </span>
+              {crmCompanyIds.size > 0 && (
+                <span className="bg-slate-800 text-slate-300 group-hover:bg-slate-700 text-[10px] px-2 py-0.5 rounded-full font-bold">
+                  {crmCompanyIds.size}
+                </span>
+              )}
+            </button>
+
+            <button
+              onClick={() => {
+                setSelectedCompany(null);
+                setActiveTab('dashboard');
+                setSidebarOpen(false);
+              }}
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold transition-all ${
+                activeTab === 'dashboard' && !selectedCompany
+                  ? 'bg-indigo-600 text-white shadow-xs'
+                  : 'hover:bg-slate-800 hover:text-white text-slate-400'
+              }`}
+            >
+              <BarChart3 className="w-4.5 h-4.5" />
+              Métricas de Campanha
+            </button>
+
+            <button
+              onClick={() => {
+                setSelectedCompany(null);
+                setActiveTab('saas');
+                setSidebarOpen(false);
+              }}
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold transition-all ${
+                activeTab === 'saas' && !selectedCompany
+                  ? 'bg-indigo-600 text-white shadow-xs'
+                  : 'hover:bg-slate-800 hover:text-white text-slate-400'
+              }`}
+            >
+              <Zap className="w-4.5 h-4.5" />
+              SaaS & Licenciamento
+            </button>
+          </nav>
+        </div>
+
+        {/* User Footwear Profile Info */}
+        <div className="p-4 border-t border-slate-850 bg-slate-950/60 text-xs flex items-center gap-3">
+          <div className="w-8 h-8 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center font-bold text-white text-xs">
+            RC
+          </div>
+          <div>
+            <div className="font-bold text-white text-xs truncate max-w-[140px]">Rômulo Chaves</div>
+            <div className="text-[10px] text-indigo-400 font-semibold uppercase tracking-wide">Gerente Local</div>
+          </div>
+        </div>
+      </aside>
+
+      {/* Main Content Area */}
+      <div className="flex-1 flex flex-col min-w-0">
+        
+        {/* Top Header Mobile-responsive bar */}
+        <header className="bg-white border-b border-slate-150 h-16 flex items-center justify-between px-6 lg:justify-end shrink-0 z-10">
+          <button
+            onClick={() => setSidebarOpen(true)}
+            className="lg:hidden p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-lg border border-slate-200"
+          >
+            <Menu className="w-5 h-5" />
+          </button>
+
+          <div className="flex items-center gap-4">
+            <span className="text-xs text-slate-400 font-medium">
+              Ambiente de Produção • <strong>Conectado</strong>
+            </span>
+            <div className="h-2 w-2 rounded-full bg-emerald-500 animate-ping" />
+          </div>
+        </header>
+
+        {/* Dynamic Workspace Container */}
+        <main className="flex-1 p-6 overflow-y-auto">
+          {selectedCompany ? (
+            <CompanyAudit
+              company={selectedCompany}
+              onBack={() => setSelectedCompany(null)}
+              onUpdateCompanyStage={handleUpdateCompanyStageDirectly}
+              savedAudit={savedAudits[selectedCompany.id]}
+              onSaveAudit={handleSaveAudit}
+            />
+          ) : activeTab === 'search' ? (
+            <div className="space-y-6">
+              <SearchFilters onSearch={handleSearch} onAddCompany={handleAddCompany} />
+              
+              <div className="flex flex-col gap-1.5 mb-2">
+                <span className="text-xs text-slate-500 font-medium uppercase tracking-wide">Resultados da Varredura</span>
+                <p className="text-xs text-slate-400">
+                  Dica comercial: Procure por empresas marcadas como <strong>"Não Reivindicada"</strong>. Você pode reivindicá-las gratuitamente no Google Meu Negócio em nome deles e cobrar de R$ 300 a R$ 1.500 pela estruturação de SEO.
+                </p>
+              </div>
+
+              <CompanyList
+                companies={filteredCompanies}
+                onSelectCompany={setSelectedCompany}
+                onAddToCrm={handleAddToCrm}
+                crmCompanyIds={crmCompanyIds}
+              />
+            </div>
+          ) : activeTab === 'crm' ? (
+            <CRMBoard
+              companies={companies}
+              onMoveStage={handleMoveCrmStage}
+              onUpdateNotes={handleUpdateNotes}
+              onRemoveFromCrm={handleRemoveFromCrm}
+              onSelectCompany={setSelectedCompany}
+            />
+          ) : activeTab === 'dashboard' ? (
+            <CampaignDashboard companies={companies} />
+          ) : (
+            <SaaSMonetization />
+          )}
+        </main>
+
+      </div>
+    </div>
+  );
+}
