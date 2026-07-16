@@ -56,9 +56,24 @@ export default function App() {
     const storedCrmIds = localStorage.getItem('gmb_prospector_crm_ids');
     const storedAudits = localStorage.getItem('gmb_prospector_audits');
 
+    let validRealCompanies: Company[] = [];
+
     if (storedCompanies) {
       try {
-        setCompanies(JSON.parse(storedCompanies));
+        const parsed = JSON.parse(storedCompanies);
+        if (Array.isArray(parsed)) {
+          // Keep only real, non-mock companies (CNPJ imports, custom manual entries, or real AI search leads)
+          validRealCompanies = parsed.filter(c => 
+            c && 
+            typeof c === 'object' && 
+            c.id && 
+            (c.id.startsWith('cnpj_imported_') || c.id.startsWith('comp_custom_') || c.id.startsWith('ai_lead_'))
+          );
+          setCompanies(validRealCompanies);
+          localStorage.setItem('gmb_prospector_companies', JSON.stringify(validRealCompanies));
+        } else {
+          setCompanies(INITIAL_COMPANIES);
+        }
       } catch (e) {
         setCompanies(INITIAL_COMPANIES);
       }
@@ -70,7 +85,13 @@ export default function App() {
       try {
         const parsed = JSON.parse(storedCrmIds);
         if (Array.isArray(parsed)) {
-          setCrmCompanyIds(new Set<string>(parsed as string[]));
+          // Sync CRM ids to keep only those matching real companies
+          const validIds = parsed.filter(id => 
+            id && 
+            (id.startsWith('cnpj_imported_') || id.startsWith('comp_custom_') || id.startsWith('ai_lead_'))
+          );
+          setCrmCompanyIds(new Set<string>(validIds as string[]));
+          localStorage.setItem('gmb_prospector_crm_ids', JSON.stringify(validIds));
         }
       } catch (e) {
         setCrmCompanyIds(new Set<string>());

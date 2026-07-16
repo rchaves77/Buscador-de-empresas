@@ -277,15 +277,16 @@ Especialista em Google Perfil de Empresas`;
 
 // 3. AI Real-time Scan with Google Search Grounding API Endpoint
 app.post('/api/scan-ai', async (req, res) => {
-  const { uf, cidade, cnae, cnaeDescricao } = req.body;
+  try {
+    const { uf, cidade, cnae, cnaeDescricao } = req.body || {};
 
-  if (!uf || !cidade) {
-    return res.status(400).json({ error: 'UF e Cidade são obrigatórios.' });
-  }
+    if (!uf || !cidade) {
+      return res.status(400).json({ error: 'UF e Cidade são obrigatórios.' });
+    }
 
-  const segment = cnaeDescricao || 'Empresas Locais';
+    const segment = cnaeDescricao || 'Empresas Locais';
 
-  const prompt = `Você é um robô de inteligência de mercado especializado em SEO Local e Google Meu Negócio.
+    const prompt = `Você é um robô de inteligência de mercado especializado em SEO Local e Google Meu Negócio.
 Sua missão é realizar uma busca ativa na internet por empresas REAIS que de fato existem no município de "${cidade} - ${uf}" pertencentes ao segmento de "${segment}".
 
 Você DEVE usar a ferramenta de busca do Google (Google Search) para descobrir empresas reais atuando nessa localidade nesse segmento.
@@ -317,42 +318,59 @@ Para cada empresa mapeada, pesquise ou estime de forma extremamente precisa e re
 
 Retorne APENAS um array JSON puro (sem Markdown como \`\`\`json ou qualquer texto explicativo antes ou depois). O JSON deve conter estritamente a lista de objetos mapeados.`;
 
-  if (ai) {
-    try {
-      const response = await ai.models.generateContent({
-        model: 'gemini-3.5-flash',
-        contents: prompt,
-        config: {
-          responseMimeType: 'application/json',
-          tools: [{ googleSearch: {} }],
-          temperature: 0.5,
+    if (ai) {
+      try {
+        const response = await ai.models.generateContent({
+          model: 'gemini-3.5-flash',
+          contents: prompt,
+          config: {
+            responseMimeType: 'application/json',
+            tools: [{ googleSearch: {} }],
+            temperature: 0.5,
+          }
+        });
+
+        const responseText = response.text;
+        if (responseText) {
+          const cleanedText = responseText.trim().replace(/^```json\s*/i, '').replace(/```\s*$/, '');
+          const parsedLeads = JSON.parse(cleanedText);
+          return res.json({ leads: parsedLeads, realTime: true });
         }
-      });
-
-      const responseText = response.text;
-      if (responseText) {
-        const cleanedText = responseText.trim().replace(/^```json\s*/i, '').replace(/```\s*$/, '');
-        const parsedLeads = JSON.parse(cleanedText);
-        return res.json({ leads: parsedLeads, realTime: true });
+      } catch (apiError: any) {
+        console.error('Gemini AI real-time scan failed:', apiError);
+        const isQuotaError = apiError.status === 429 || 
+                             apiError.message?.includes('quota') || 
+                             apiError.message?.includes('RESOURCE_EXHAUSTED') ||
+                             JSON.stringify(apiError).includes('RESOURCE_EXHAUSTED') ||
+                             JSON.stringify(apiError).includes('429');
+        if (isQuotaError) {
+          return res.status(429).json({ 
+            error: 'Limite de cota excedido (429) na chave de API do Gemini. Por favor, verifique seus limites ou faturamento no Google AI Studio.' 
+          });
+        }
+        return res.status(500).json({ 
+          error: `Erro na API do Gemini durante a varredura: ${apiError.message || apiError}` 
+        });
       }
-    } catch (apiError) {
-      console.error('Gemini AI real-time scan failed, falling back to local simulation:', apiError);
     }
-  }
 
-  // Fallback to empty if Gemini is offline/not key
-  res.json({ leads: [], realTime: false, message: 'Revertido para simulação local por falta de API key ou falha.' });
+    return res.status(400).json({ error: 'Nenhum resultado real retornado pelo buscador de IA ou API key não configurada.' });
+  } catch (err: any) {
+    console.error('Unhandled exception in /api/scan-ai:', err);
+    return res.status(500).json({ error: `Erro interno no servidor: ${err.message || err}` });
+  }
 });
 
 // 4. AI Real-time CNPJ Contact Enrichment API Endpoint
 app.post('/api/enrich-cnpj', async (req, res) => {
-  const { cnpj, name, uf, city } = req.body;
+  try {
+    const { cnpj, name, uf, city } = req.body || {};
 
-  if (!cnpj) {
-    return res.status(400).json({ error: 'CNPJ é obrigatório.' });
-  }
+    if (!cnpj) {
+      return res.status(400).json({ error: 'CNPJ é obrigatório.' });
+    }
 
-  const prompt = `Você é um robô avançado de enriquecimento de dados comerciais e SEO Local.
+    const prompt = `Você é um robô avançado de enriquecimento de dados comerciais e SEO Local.
 Sua missão é realizar uma busca minuciosa na internet real utilizando o Google Search para encontrar informações de CONTATO ATIVAS E REAIS (Telefones comerciais, WhatsApps reais, e-mails de contato ativos e o site oficial ou perfil em redes sociais como Instagram, Facebook, LinkedIn) para a seguinte empresa:
 - CNPJ: ${cnpj}
 - Nome sugerido: ${name || 'Não informado'}
@@ -377,30 +395,47 @@ Retorne APENAS um objeto JSON com o seguinte formato exato (sem Markdown \`\`\`j
   "source_urls": ["<lista de URLs de onde você encontrou essas informações reais>"]
 }`;
 
-  if (ai) {
-    try {
-      const response = await ai.models.generateContent({
-        model: 'gemini-3.5-flash',
-        contents: prompt,
-        config: {
-          responseMimeType: 'application/json',
-          tools: [{ googleSearch: {} }],
-          temperature: 0.2,
+    if (ai) {
+      try {
+        const response = await ai.models.generateContent({
+          model: 'gemini-3.5-flash',
+          contents: prompt,
+          config: {
+            responseMimeType: 'application/json',
+            tools: [{ googleSearch: {} }],
+            temperature: 0.2,
+          }
+        });
+
+        const responseText = response.text;
+        if (responseText) {
+          const cleanedText = responseText.trim().replace(/^```json\s*/i, '').replace(/```\s*$/, '');
+          const enrichedData = JSON.parse(cleanedText);
+          return res.json(enrichedData);
         }
-      });
-
-      const responseText = response.text;
-      if (responseText) {
-        const cleanedText = responseText.trim().replace(/^```json\s*/i, '').replace(/```\s*$/, '');
-        const enrichedData = JSON.parse(cleanedText);
-        return res.json(enrichedData);
+      } catch (apiError: any) {
+        console.error('Gemini real-time CNPJ enrichment failed:', apiError);
+        const isQuotaError = apiError.status === 429 || 
+                             apiError.message?.includes('quota') || 
+                             apiError.message?.includes('RESOURCE_EXHAUSTED') ||
+                             JSON.stringify(apiError).includes('RESOURCE_EXHAUSTED') ||
+                             JSON.stringify(apiError).includes('429');
+        if (isQuotaError) {
+          return res.status(429).json({ 
+            error: 'Limite de cota excedido (429) na chave de API do Gemini. Por favor, verifique seus limites ou faturamento no Google AI Studio.' 
+          });
+        }
+        return res.status(500).json({ 
+          error: `Erro na API do Gemini: ${apiError.message || apiError}` 
+        });
       }
-    } catch (apiError) {
-      console.error('Gemini real-time CNPJ enrichment failed:', apiError);
     }
-  }
 
-  res.json({ error: 'Nenhum resultado real retornado pelo buscador de IA ou API key não configurada.' });
+    return res.status(400).json({ error: 'Nenhum resultado real retornado pelo buscador de IA ou API key não configurada.' });
+  } catch (err: any) {
+    console.error('Unhandled exception in /api/enrich-cnpj:', err);
+    return res.status(500).json({ error: `Erro interno no servidor: ${err.message || err}` });
+  }
 });
 
 // Export app for serverless deployment (e.g. Vercel)
