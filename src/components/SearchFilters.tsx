@@ -272,7 +272,16 @@ export default function SearchFilters({ onSearch, onAddCompany, onAddCompanies }
               city: selectedCidade
             })
           });
-          if (!enrichRes.ok) throw new Error('AI search failed');
+          if (!enrichRes.ok) {
+            let errorMsg = 'AI search failed';
+            try {
+              const errData = await enrichRes.json();
+              if (errData && errData.error) {
+                errorMsg = errData.error;
+              }
+            } catch (e) {}
+            throw new Error(errorMsg);
+          }
           const enrichData = await enrichRes.json();
           
           if (enrichData && !enrichData.error && enrichData.nomeFantasia && enrichData.nomeFantasia !== 'Não informado') {
@@ -312,9 +321,10 @@ export default function SearchFilters({ onSearch, onAddCompany, onAddCompanies }
           } else {
             throw new Error('Not found by AI');
           }
-        } catch (aiErr) {
+        } catch (aiErr: any) {
           // If both fail, we mark as error and DO NOT inject fake mock leads
-          setBatchLogs(prev => prev.map((l, idx) => idx === i ? { ...l, status: 'error', label: 'CNPJ não encontrado na Receita Federal ou Google Search' } : l));
+          const finalMsg = aiErr.message || 'CNPJ não encontrado na Receita Federal ou Google Search';
+          setBatchLogs(prev => prev.map((l, idx) => idx === i ? { ...l, status: 'error', label: finalMsg } : l));
         }
       }
 
@@ -556,7 +566,14 @@ export default function SearchFilters({ onSearch, onAddCompany, onAddCompanies }
                     })
                   });
                   if (!enrichRes.ok) {
-                    throw new Error('Serviço de busca por IA indisponível no momento.');
+                    let errMsg = 'Serviço de busca por IA indisponível no momento.';
+                    try {
+                      const errData = await enrichRes.json();
+                      if (errData && errData.error) {
+                        errMsg = errData.error;
+                      }
+                    } catch (e) {}
+                    throw new Error(errMsg);
                   }
                   const enrichData = await enrichRes.json();
                   if (!enrichData || enrichData.error || !enrichData.nomeFantasia || enrichData.nomeFantasia === 'Não informado') {

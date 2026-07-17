@@ -138,7 +138,16 @@ export default function App() {
         })
       });
 
-      if (!res.ok) throw new Error('Falha no servidor de IA.');
+      if (!res.ok) {
+        let errorMsg = 'Falha no servidor de IA.';
+        try {
+          const errData = await res.json();
+          if (errData && errData.error) {
+            errorMsg = errData.error;
+          }
+        } catch (e) {}
+        throw new Error(errorMsg);
+      }
       const data = await res.json();
 
       if (data.leads && data.leads.length > 0) {
@@ -150,9 +159,9 @@ export default function App() {
       } else {
         alert('Varredura de IA finalizada. Nenhuma nova empresa real foi localizada na internet para esta região neste momento.');
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      alert('Erro na conexão com a inteligência artificial para varredura real-time. Por favor, verifique sua chave API do Gemini nas Configurações.');
+      alert(`Erro na conexão com a inteligência artificial para varredura real-time: ${err.message || 'Por favor, verifique sua chave API do Gemini nas Configurações.'}`);
     } finally {
       setIsScanningAi(false);
     }

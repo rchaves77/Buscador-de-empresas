@@ -338,18 +338,19 @@ Retorne APENAS um array JSON puro (sem Markdown como \`\`\`json ou qualquer text
         }
       } catch (apiError: any) {
         console.error('Gemini AI real-time scan failed:', apiError);
-        const isQuotaError = apiError.status === 429 || 
-                             apiError.message?.includes('quota') || 
-                             apiError.message?.includes('RESOURCE_EXHAUSTED') ||
-                             JSON.stringify(apiError).includes('RESOURCE_EXHAUSTED') ||
-                             JSON.stringify(apiError).includes('429');
+        const errMessage = String(apiError?.message || apiError || '');
+        const errStatus = apiError?.status || apiError?.statusCode || 0;
+        const isQuotaError = errStatus === 429 || 
+                             errMessage.includes('quota') || 
+                             errMessage.includes('RESOURCE_EXHAUSTED') ||
+                             errMessage.includes('429');
         if (isQuotaError) {
           return res.status(429).json({ 
             error: 'Limite de cota excedido (429) na chave de API do Gemini. Por favor, verifique seus limites ou faturamento no Google AI Studio.' 
           });
         }
         return res.status(500).json({ 
-          error: `Erro na API do Gemini durante a varredura: ${apiError.message || apiError}` 
+          error: `Erro na API do Gemini durante a varredura: ${errMessage}` 
         });
       }
     }
@@ -415,18 +416,19 @@ Retorne APENAS um objeto JSON com o seguinte formato exato (sem Markdown \`\`\`j
         }
       } catch (apiError: any) {
         console.error('Gemini real-time CNPJ enrichment failed:', apiError);
-        const isQuotaError = apiError.status === 429 || 
-                             apiError.message?.includes('quota') || 
-                             apiError.message?.includes('RESOURCE_EXHAUSTED') ||
-                             JSON.stringify(apiError).includes('RESOURCE_EXHAUSTED') ||
-                             JSON.stringify(apiError).includes('429');
+        const errMessage = String(apiError?.message || apiError || '');
+        const errStatus = apiError?.status || apiError?.statusCode || 0;
+        const isQuotaError = errStatus === 429 || 
+                             errMessage.includes('quota') || 
+                             errMessage.includes('RESOURCE_EXHAUSTED') ||
+                             errMessage.includes('429');
         if (isQuotaError) {
           return res.status(429).json({ 
             error: 'Limite de cota excedido (429) na chave de API do Gemini. Por favor, verifique seus limites ou faturamento no Google AI Studio.' 
           });
         }
         return res.status(500).json({ 
-          error: `Erro na API do Gemini: ${apiError.message || apiError}` 
+          error: `Erro na API do Gemini: ${errMessage}` 
         });
       }
     }
