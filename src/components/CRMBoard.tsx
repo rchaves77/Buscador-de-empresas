@@ -13,6 +13,7 @@ interface CRMBoardProps {
   onUpdateNotes: (companyId: string, notes: string) => void;
   onRemoveFromCrm: (companyId: string) => void;
   onSelectCompany: (company: Company) => void;
+  onUpdateCompanyStage?: (companyId: string, stage: string) => void;
 }
 
 const STAGE_CONFIGS: Record<CRMStage, { label: string; color: string; bg: string; border: string; text: string }> = {
@@ -68,9 +69,47 @@ const STAGE_ORDER: CRMStage[] = [
   CRMStage.CLOSED_WON
 ];
 
-export default function CRMBoard({ companies, onMoveStage, onUpdateNotes, onRemoveFromCrm, onSelectCompany }: CRMBoardProps) {
+export default function CRMBoard({ companies, onMoveStage, onUpdateNotes, onRemoveFromCrm, onSelectCompany, onUpdateCompanyStage }: CRMBoardProps) {
   const [editingNotesId, setEditingNotesId] = useState<string | null>(null);
   const [notesTempText, setNotesTempText] = useState('');
+
+  const handleWhatsAppClick = (company: Company) => {
+    const cleanPhone = company.telefone ? company.telefone.replace(/\D/g, '') : '';
+    if (!cleanPhone || cleanPhone === 'Semtelefone') {
+      alert(`A empresa ${company.nomeFantasia || company.razaoSocial} não possui telefone de contato.`);
+      return;
+    }
+    const phoneWithCountry = cleanPhone.startsWith('55') ? cleanPhone : `55${cleanPhone}`;
+    const pitchText = `Olá, tudo bem? Meu nome é Rômulo Chaves, sou especialista em posicionamento local.
+
+Estava pesquisando por empresas no seu segmento na nossa região e encontrei a ficha da ${company.nomeFantasia || company.razaoSocial} no Google.
+
+Como profissional da área, preciso ser muito honesto: o perfil de vocês tem um potencial gigante, mas hoje está "invisível" para muitos clientes por falta de otimizações técnicas que o Google exige.
+
+⚠️ E antes de mais nada, sei que tem muito golpe por aí: 
+1. Eu NÃO sou do Google (sou profissional autônomo e atuo aqui no Acre).
+2. O Google NÃO cobra taxa nenhuma para manter sua empresa no mapa.
+3. Meu trabalho é técnico: otimizar sua ficha para trazer mais clientes reais para a sua porta.
+
+O que eu garanto:
+🟢 Qualificação técnica que o algoritmo do Google exige.
+🟢 Aumento no fluxo de pessoas traçando rotas, ligando ou chamando você.
+🟢 Sua marca como referência para quem pesquisa na nossa região.
+
+Quer receber uma análise gratuita e rápida de onde seu perfil está perdendo clientes hoje? 
+
+Clica no link abaixo que você já cai direto no meu WhatsApp pessoal para conversarmos:
+
+https://wa.me/5568981034408?text=Olá!+Gostaria+de+fazer+uma+análise+gratuita+do+meu+perfil+do+Google.`;
+
+    const encodedText = encodeURIComponent(pitchText);
+    const waUrl = `https://wa.me/${phoneWithCountry}?text=${encodedText}`;
+
+    if (onUpdateCompanyStage && company.crmStage === CRMStage.IDENTIFIED) {
+      onUpdateCompanyStage(company.id, CRMStage.INITIAL_CONTACT);
+    }
+    window.open(waUrl, '_blank');
+  };
 
   const crmCompanies = companies.filter(c => c.crmStage !== undefined);
 
@@ -168,7 +207,18 @@ export default function CRMBoard({ companies, onMoveStage, onUpdateNotes, onRemo
 
                       {/* GMB Status Warning indicator */}
                       <div className="mt-2.5 pt-2 border-t border-slate-100 flex items-center justify-between text-[10px]">
-                        <span className="text-slate-400 font-mono">{company.telefone}</span>
+                        <div className="flex items-center gap-1 group/phone">
+                          <span className="text-slate-400 font-mono truncate max-w-[100px]">{company.telefone || 'Sem telefone'}</span>
+                          {company.telefone && company.telefone !== 'Sem telefone' && (
+                            <button
+                              onClick={() => handleWhatsAppClick(company)}
+                              className="p-0.5 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 rounded cursor-pointer transition-colors shrink-0"
+                              title="Enviar abordagem via WhatsApp"
+                            >
+                              <MessageSquare className="w-3 h-3 fill-emerald-100" />
+                            </button>
+                          )}
+                        </div>
                         {!company.gmbStatus.isClaimed ? (
                           <span className="text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded font-bold" title="Perfil não reivindicado!">
                             Não Reivind.

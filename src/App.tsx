@@ -574,6 +574,7 @@ export default function App() {
                 onSelectCompany={setSelectedCompany}
                 onAddToCrm={handleAddToCrm}
                 crmCompanyIds={crmCompanyIds}
+                onUpdateCompanyStage={handleUpdateCompanyStageDirectly}
               />
             </div>
           ) : activeTab === 'crm' ? (
@@ -583,6 +584,7 @@ export default function App() {
               onUpdateNotes={handleUpdateNotes}
               onRemoveFromCrm={handleRemoveFromCrm}
               onSelectCompany={setSelectedCompany}
+              onUpdateCompanyStage={handleUpdateCompanyStageDirectly}
             />
           ) : activeTab === 'dashboard' ? (
             <CampaignDashboard companies={companies} />
