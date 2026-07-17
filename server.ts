@@ -6,6 +6,7 @@
 import express from 'express';
 import path from 'path';
 import dotenv from 'dotenv';
+import fs from 'fs';
 import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI, Type } from '@google/genai';
 
@@ -15,6 +16,40 @@ const app = express();
 app.use(express.json());
 
 const PORT = 3000;
+
+// Path to persistent server-side database file
+const DB_FILE = path.join(process.cwd(), 'gmb_database.json');
+
+// Get database state
+app.get('/api/db', (req, res) => {
+  try {
+    if (fs.existsSync(DB_FILE)) {
+      const content = fs.readFileSync(DB_FILE, 'utf-8');
+      const data = JSON.parse(content);
+      return res.json(data);
+    }
+  } catch (err) {
+    console.error('Failed to read database file:', err);
+  }
+  return res.json({ companies: [], crmCompanyIds: [], savedAudits: {} });
+});
+
+// Update database state
+app.post('/api/db', (req, res) => {
+  try {
+    const { companies, crmCompanyIds, savedAudits } = req.body;
+    const data = {
+      companies: companies || [],
+      crmCompanyIds: crmCompanyIds || [],
+      savedAudits: savedAudits || {}
+    };
+    fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2), 'utf-8');
+    return res.json({ success: true });
+  } catch (err: any) {
+    console.error('Failed to write database file:', err);
+    return res.status(500).json({ error: `Erro ao salvar banco de dados: ${err.message}` });
+  }
+});
 
 // Initialize Google GenAI
 let ai: GoogleGenAI | null = null;

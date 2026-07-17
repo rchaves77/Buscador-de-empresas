@@ -50,68 +50,123 @@ export default function App() {
     gmbFilter: 'all'
   });
 
-  // Load state from localStorage on mount
+  // Load state from server-side database on mount (with localStorage fallback)
   useEffect(() => {
-    const storedCompanies = localStorage.getItem('gmb_prospector_companies');
-    const storedCrmIds = localStorage.getItem('gmb_prospector_crm_ids');
-    const storedAudits = localStorage.getItem('gmb_prospector_audits');
-
-    let validRealCompanies: Company[] = [];
-
-    if (storedCompanies) {
+    const loadData = async () => {
       try {
-        const parsed = JSON.parse(storedCompanies);
-        if (Array.isArray(parsed)) {
-          // Keep only real, non-mock companies (CNPJ imports, custom manual entries, or real AI search leads)
-          validRealCompanies = parsed.filter(c => 
-            c && 
-            typeof c === 'object' && 
-            c.id && 
-            (c.id.startsWith('cnpj_imported_') || c.id.startsWith('comp_custom_') || c.id.startsWith('ai_lead_'))
-          );
-          setCompanies(validRealCompanies);
-          localStorage.setItem('gmb_prospector_companies', JSON.stringify(validRealCompanies));
-        } else {
+        const res = await fetch('/api/db');
+        if (res.ok) {
+          const serverData = await res.json();
+          const { companies: sCompanies, crmCompanyIds: sCrmIds, savedAudits: sAudits } = serverData;
+          
+          if (Array.isArray(sCompanies)) {
+            const validRealCompanies = sCompanies.filter(c => 
+              c && 
+              typeof c === 'object' && 
+              c.id && 
+              (c.id.startsWith('cnpj_imported_') || c.id.startsWith('comp_custom_') || c.id.startsWith('ai_lead_'))
+            );
+            setCompanies(validRealCompanies);
+            localStorage.setItem('gmb_prospector_companies', JSON.stringify(validRealCompanies));
+          }
+          
+          if (Array.isArray(sCrmIds)) {
+            const validIds = sCrmIds.filter(id => 
+              id && 
+              (id.startsWith('cnpj_imported_') || id.startsWith('comp_custom_') || id.startsWith('ai_lead_'))
+            );
+            setCrmCompanyIds(new Set<string>(validIds as string[]));
+            localStorage.setItem('gmb_prospector_crm_ids', JSON.stringify(validIds));
+          }
+          
+          if (sAudits && typeof sAudits === 'object') {
+            setSavedAudits(sAudits);
+            localStorage.setItem('gmb_prospector_audits', JSON.stringify(sAudits));
+          }
+          return; // Successfully loaded from server
+        }
+      } catch (err) {
+        console.error('Failed to load database from server, using localStorage fallback:', err);
+      }
+
+      // Local storage fallback
+      const storedCompanies = localStorage.getItem('gmb_prospector_companies');
+      const storedCrmIds = localStorage.getItem('gmb_prospector_crm_ids');
+      const storedAudits = localStorage.getItem('gmb_prospector_audits');
+
+      let validRealCompanies: Company[] = [];
+
+      if (storedCompanies) {
+        try {
+          const parsed = JSON.parse(storedCompanies);
+          if (Array.isArray(parsed)) {
+            validRealCompanies = parsed.filter(c => 
+              c && 
+              typeof c === 'object' && 
+              c.id && 
+              (c.id.startsWith('cnpj_imported_') || c.id.startsWith('comp_custom_') || c.id.startsWith('ai_lead_'))
+            );
+            setCompanies(validRealCompanies);
+            localStorage.setItem('gmb_prospector_companies', JSON.stringify(validRealCompanies));
+          } else {
+            setCompanies(INITIAL_COMPANIES);
+          }
+        } catch (e) {
           setCompanies(INITIAL_COMPANIES);
         }
-      } catch (e) {
+      } else {
         setCompanies(INITIAL_COMPANIES);
       }
-    } else {
-      setCompanies(INITIAL_COMPANIES);
-    }
 
-    if (storedCrmIds) {
-      try {
-        const parsed = JSON.parse(storedCrmIds);
-        if (Array.isArray(parsed)) {
-          // Sync CRM ids to keep only those matching real companies
-          const validIds = parsed.filter(id => 
-            id && 
-            (id.startsWith('cnpj_imported_') || id.startsWith('comp_custom_') || id.startsWith('ai_lead_'))
-          );
-          setCrmCompanyIds(new Set<string>(validIds as string[]));
-          localStorage.setItem('gmb_prospector_crm_ids', JSON.stringify(validIds));
+      if (storedCrmIds) {
+        try {
+          const parsed = JSON.parse(storedCrmIds);
+          if (Array.isArray(parsed)) {
+            const validIds = parsed.filter(id => 
+              id && 
+              (id.startsWith('cnpj_imported_') || id.startsWith('comp_custom_') || id.startsWith('ai_lead_'))
+            );
+            setCrmCompanyIds(new Set<string>(validIds as string[]));
+            localStorage.setItem('gmb_prospector_crm_ids', JSON.stringify(validIds));
+          }
+        } catch (e) {
+          setCrmCompanyIds(new Set<string>());
         }
-      } catch (e) {
-        setCrmCompanyIds(new Set<string>());
       }
-    }
 
-    if (storedAudits) {
-      try {
-        setSavedAudits(JSON.parse(storedAudits));
-      } catch (e) {
-        setSavedAudits({});
+      if (storedAudits) {
+        try {
+          setSavedAudits(JSON.parse(storedAudits));
+        } catch (e) {
+          setSavedAudits({});
+        }
       }
-    }
+    };
+
+    loadData();
   }, []);
 
-  // Save state to localStorage when changes occur
-  const saveToStorage = (updatedCompanies: Company[], updatedCrmIds: Set<string>, updatedAudits = savedAudits) => {
+  // Save state to localStorage and server-side database when changes occur
+  const saveToStorage = async (updatedCompanies: Company[], updatedCrmIds: Set<string>, updatedAudits = savedAudits) => {
+    // 1. Save to local cache
     localStorage.setItem('gmb_prospector_companies', JSON.stringify(updatedCompanies));
     localStorage.setItem('gmb_prospector_crm_ids', JSON.stringify(Array.from(updatedCrmIds)));
     localStorage.setItem('gmb_prospector_audits', JSON.stringify(updatedAudits));
+
+    // 2. Persist to server
+    try {
+      await fetch('/api/db', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          companies: updatedCompanies,
+          crmCompanyIds: Array.from(updatedCrmIds),
+          savedAudits: updatedAudits
+        })
+      });
+    } catch (err) {
+      console.error('Failed to save database to server:', err);
+    }
   };
 
   const handleSearch = (filters: { query: string; uf: string; cidade: string; cnae: string; gmbFilter: string }) => {
