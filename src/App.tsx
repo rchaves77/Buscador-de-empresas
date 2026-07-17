@@ -19,7 +19,13 @@ import {
   Menu,
   X,
   RotateCw,
-  Globe
+  Globe,
+  Database,
+  Cloud,
+  Copy,
+  Check,
+  Server,
+  ExternalLink
 } from 'lucide-react';
 
 import { Company, CRMStage, AuditReport } from './types';
@@ -41,6 +47,12 @@ export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [isScanningAi, setIsScanningAi] = useState(false);
 
+  // Supabase states
+  const [supabaseActive, setSupabaseActive] = useState(false);
+  const [tableMissing, setTableMissing] = useState(false);
+  const [dbSource, setDbSource] = useState('local_file');
+  const [showSupabaseModal, setShowSupabaseModal] = useState(false);
+
   // Active filters for company listing
   const [activeFilters, setActiveFilters] = useState({
     query: '',
@@ -57,8 +69,12 @@ export default function App() {
         const res = await fetch('/api/db');
         if (res.ok) {
           const serverData = await res.json();
-          const { companies: sCompanies, crmCompanyIds: sCrmIds, savedAudits: sAudits } = serverData;
+          const { companies: sCompanies, crmCompanyIds: sCrmIds, savedAudits: sAudits, supabaseActive: sActive, tableMissing: sTableMissing, source: sSource } = serverData;
           
+          if (sActive !== undefined) setSupabaseActive(sActive);
+          if (sTableMissing !== undefined) setTableMissing(sTableMissing);
+          if (sSource !== undefined) setDbSource(sSource);
+
           if (Array.isArray(sCompanies)) {
             const validRealCompanies = sCompanies.filter(c => 
               c && 
@@ -155,7 +171,7 @@ export default function App() {
 
     // 2. Persist to server
     try {
-      await fetch('/api/db', {
+      const res = await fetch('/api/db', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -164,6 +180,16 @@ export default function App() {
           savedAudits: updatedAudits
         })
       });
+      if (res.ok) {
+        const serverData = await res.json();
+        if (serverData.supabaseActive !== undefined) setSupabaseActive(serverData.supabaseActive);
+        if (serverData.tableMissing !== undefined) setTableMissing(serverData.tableMissing);
+        if (serverData.savedToSupabase !== undefined && serverData.savedToSupabase) {
+          setDbSource('supabase');
+        } else {
+          setDbSource('local_file');
+        }
+      }
     } catch (err) {
       console.error('Failed to save database to server:', err);
     }
@@ -515,10 +541,39 @@ export default function App() {
           </button>
 
           <div className="flex items-center gap-4">
-            <span className="text-xs text-slate-400 font-medium">
+            {/* Supabase Integration Status Badge */}
+            <button
+              onClick={() => setShowSupabaseModal(true)}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-bold transition-all shadow-2xs hover:scale-[1.02] cursor-pointer ${
+                supabaseActive && !tableMissing
+                  ? 'bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100'
+                  : supabaseActive && tableMissing
+                  ? 'bg-amber-50 border-amber-200 text-amber-700 hover:bg-amber-100'
+                  : 'bg-slate-100 border-slate-250 text-slate-600 hover:bg-slate-200'
+              }`}
+              title="Configuração de Banco de Dados Nuvem (Supabase)"
+            >
+              <Database className="w-3.5 h-3.5" />
+              <span>
+                {supabaseActive && !tableMissing
+                  ? 'Supabase Conectado'
+                  : supabaseActive && tableMissing
+                  ? 'Supabase: Criar Tabela'
+                  : 'Salvar na Nuvem (Supabase)'}
+              </span>
+              <span className={`h-1.5 w-1.5 rounded-full ${
+                supabaseActive && !tableMissing
+                  ? 'bg-emerald-500'
+                  : supabaseActive && tableMissing
+                  ? 'bg-amber-500 animate-pulse'
+                  : 'bg-slate-400'
+              }`} />
+            </button>
+
+            <span className="text-xs text-slate-400 font-medium hidden sm:inline-block">
               Ambiente de Produção • <strong>Conectado</strong>
             </span>
-            <div className="h-2 w-2 rounded-full bg-emerald-500 animate-ping" />
+            <div className="h-2 w-2 rounded-full bg-emerald-500 animate-ping hidden sm:block" />
           </div>
         </header>
 
@@ -594,6 +649,157 @@ export default function App() {
         </main>
 
       </div>
+
+      {/* Supabase Setup Modal */}
+      {showSupabaseModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 overflow-y-auto">
+          <div className="bg-white rounded-xl shadow-xl border border-slate-200 max-w-2xl w-full overflow-hidden animate-in fade-in zoom-in-95 duration-200 flex flex-col my-8">
+            {/* Modal Header */}
+            <div className="px-6 py-4 bg-slate-50 border-b border-slate-150 flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <Database className="w-5 h-5 text-indigo-600" />
+                <div>
+                  <h3 className="font-bold text-slate-900 text-sm">Persistência em Nuvem (Supabase)</h3>
+                  <p className="text-[10px] text-slate-500 font-medium">Guarde suas empresas e leads permanentemente para acessar em qualquer dispositivo</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowSupabaseModal(false)}
+                className="text-slate-400 hover:text-slate-600 font-bold p-1 rounded-full hover:bg-slate-100 transition-colors cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6 space-y-6 overflow-y-auto max-h-[75vh]">
+              {/* Status Banner */}
+              <div className={`p-4 rounded-xl border flex items-start gap-3 ${
+                supabaseActive && !tableMissing
+                  ? 'bg-emerald-50/50 border-emerald-150 text-emerald-900'
+                  : supabaseActive && tableMissing
+                  ? 'bg-amber-50/50 border-amber-150 text-amber-900'
+                  : 'bg-indigo-50/30 border-indigo-100 text-indigo-900'
+              }`}>
+                <div className={`p-2 rounded-lg text-white ${
+                  supabaseActive && !tableMissing
+                    ? 'bg-emerald-600'
+                    : supabaseActive && tableMissing
+                    ? 'bg-amber-500'
+                    : 'bg-indigo-600'
+                }`}>
+                  <Cloud className="w-4 h-4" />
+                </div>
+                <div className="space-y-1">
+                  <h4 className="font-bold text-xs uppercase tracking-wider">Status da Conexão</h4>
+                  <div className="text-xs leading-normal">
+                    {supabaseActive && !tableMissing ? (
+                      <span><strong>Conectado e Ativo!</strong> Seus leads, histórico de auditoria e configurações do CRM agora estão salvos permanentemente na sua nuvem do Supabase.</span>
+                    ) : supabaseActive && tableMissing ? (
+                      <span><strong>Chaves Detectadas!</strong> Mas a tabela <code>gmb_prospector_state</code> não foi criada no seu Supabase. Siga as instruções abaixo para criá-la.</span>
+                    ) : (
+                      <span><strong>Usando Banco Local.</strong> Atualmente os dados estão armazenados localmente e no navegador. Para habilitar o salvamento em múltiplos dispositivos, conecte seu Supabase gratuito.</span>
+                    )}
+                  </div>
+                  <div className="text-[10px] font-mono text-slate-500 mt-1 flex items-center gap-1.5">
+                    <span>Origem Ativa:</span>
+                    <span className="bg-white border px-1.5 py-0.5 rounded font-bold text-slate-700 capitalize">
+                      {dbSource === 'supabase' ? 'Supabase Cloud ☁️' : 'Arquivo Local (.json) 💾'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Steps */}
+              <div className="space-y-4">
+                <h4 className="font-bold text-slate-800 text-xs uppercase tracking-wider flex items-center gap-1.5 animate-pulse-subtle">
+                  <Server className="w-4 h-4 text-indigo-500" />
+                  Como conectar seu Supabase gratuito (Passo a Passo)
+                </h4>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+                  {/* Step 1 & 2 */}
+                  <div className="border border-slate-150 rounded-xl p-4 bg-slate-50/50 space-y-2">
+                    <div className="font-bold text-indigo-600">1. Obter as Credenciais:</div>
+                    <ul className="list-disc pl-4 space-y-1 text-slate-600 leading-relaxed">
+                      <li>Crie um projeto grátis em <a href="https://supabase.com" target="_blank" rel="noreferrer" className="text-indigo-600 font-bold hover:underline inline-flex items-center gap-0.5">supabase.com <ExternalLink className="w-2.5 h-2.5 inline" /></a>.</li>
+                      <li>Vá em <strong>Project Settings &gt; API</strong>.</li>
+                      <li>Copie a <strong>Project URL</strong> e a chave <strong>anon (public)</strong> ou <strong>service_role</strong>.</li>
+                    </ul>
+                  </div>
+
+                  {/* Step 3 */}
+                  <div className="border border-slate-150 rounded-xl p-4 bg-slate-50/50 space-y-2">
+                    <div className="font-bold text-indigo-600">2. Adicionar no Google AI Studio:</div>
+                    <p className="text-slate-600 leading-relaxed">
+                      No painel esquerdo ou configurações do AI Studio, abra a seção de <strong>Secrets (Segredos)</strong> e adicione estas duas chaves:
+                    </p>
+                    <div className="font-mono text-[10px] bg-slate-100 p-2 rounded border border-slate-200 text-slate-700 space-y-1">
+                      <div><strong>SUPABASE_URL</strong> = [sua_url_aqui]</div>
+                      <div><strong>SUPABASE_KEY</strong> = [sua_chave_aqui]</div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Step 4 - SQL Editor */}
+                <div className="border border-slate-150 rounded-xl p-4 bg-slate-50/50 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="font-bold text-indigo-600 text-xs">3. Executar Script de Tabelas no Supabase:</div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const sql = `CREATE TABLE IF NOT EXISTS gmb_prospector_state (
+  id TEXT PRIMARY KEY,
+  companies JSONB NOT NULL DEFAULT '[]'::jsonb,
+  crm_company_ids JSONB NOT NULL DEFAULT '[]'::jsonb,
+  saved_audits JSONB NOT NULL DEFAULT '{}'::jsonb,
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+INSERT INTO gmb_prospector_state (id, companies, crm_company_ids, saved_audits)
+VALUES ('default', '[]', '[]', '{}')
+ON CONFLICT (id) DO NOTHING;`;
+                        navigator.clipboard.writeText(sql);
+                        alert('Script SQL copiado com sucesso para a área de transferência!');
+                      }}
+                      className="px-2.5 py-1.5 bg-indigo-50 border border-indigo-200 hover:bg-indigo-100 text-indigo-700 rounded-lg text-[10px] font-bold transition-all flex items-center gap-1 cursor-pointer"
+                    >
+                      <Copy className="w-3 h-3" />
+                      Copiar Código SQL
+                    </button>
+                  </div>
+                  <p className="text-xs text-slate-600 leading-normal">
+                    Abra o <strong>SQL Editor</strong> no painel do Supabase, cole o comando abaixo e clique em <strong>Run</strong>:
+                  </p>
+                  <pre className="text-[10px] font-mono bg-slate-950 text-slate-300 p-3.5 rounded-lg border border-slate-800 overflow-x-auto leading-relaxed select-all">
+{`CREATE TABLE IF NOT EXISTS gmb_prospector_state (
+  id TEXT PRIMARY KEY,
+  companies JSONB NOT NULL DEFAULT '[]'::jsonb,
+  crm_company_ids JSONB NOT NULL DEFAULT '[]'::jsonb,
+  saved_audits JSONB NOT NULL DEFAULT '{}'::jsonb,
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+INSERT INTO gmb_prospector_state (id, companies, crm_company_ids, saved_audits)
+VALUES ('default', '[]', '[]', '{}')
+ON CONFLICT (id) DO NOTHING;`}
+                  </pre>
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="px-6 py-4 bg-slate-50 border-t border-slate-150 flex items-center justify-end">
+              <button
+                onClick={() => setShowSupabaseModal(false)}
+                className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-bold cursor-pointer"
+              >
+                Concluído
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

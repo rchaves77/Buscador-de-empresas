@@ -9,6 +9,7 @@ import dotenv from 'dotenv';
 import fs from 'fs';
 import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI, Type } from '@google/genai';
+import { createClient } from '@supabase/supabase-js';
 
 dotenv.config();
 
@@ -17,37 +18,156 @@ app.use(express.json());
 
 const PORT = 3000;
 
-// Path to persistent server-side database file
+// Path to persistent server-side database file (fallback if Supabase is offline/unconfigured)
 const DB_FILE = path.join(process.cwd(), 'gmb_database.json');
 
+// Lazy-initialized Supabase Client helper
+let supabaseClient: any = null;
+
+function getSupabase() {
+  if (supabaseClient) return supabaseClient;
+  const url = process.env.SUPABASE_URL;
+  const key = process.env.SUPABASE_KEY;
+  if (url && key && url !== 'MY_SUPABASE_URL' && key !== 'MY_SUPABASE_KEY' && url.trim() !== '' && key.trim() !== '') {
+    try {
+      supabaseClient = createClient(url, key, {
+        auth: {
+          persistSession: false
+        }
+      });
+      console.log('Supabase client initialized successfully.');
+      return supabaseClient;
+    } catch (err) {
+      console.error('Failed to initialize Supabase client:', err);
+    }
+  }
+  return null;
+}
+
 // Get database state
-app.get('/api/db', (req, res) => {
+app.get('/api/db', async (req, res) => {
+  const supabase = getSupabase();
+  const supabaseActive = !!supabase;
+  let tableMissing = false;
+
+  if (supabase) {
+    try {
+      const { data, error } = await supabase
+        .from('gmb_prospector_state')
+        .select('*')
+        .eq('id', 'default')
+        .single();
+
+      if (error) {
+        if (error.code === 'PGRST116') {
+          // Row doesn't exist yet, we will create it when saving
+          console.log('Supabase table exists but default row not found. Returning empty state.');
+        } else if (error.code === '42P01') {
+          console.log('Supabase table gmb_prospector_state is missing.');
+          tableMissing = true;
+        } else {
+          console.error('Supabase fetch error:', error);
+          throw error;
+        }
+      } else if (data) {
+        return res.json({
+          companies: data.companies || [],
+          crmCompanyIds: data.crm_company_ids || [],
+          savedAudits: data.saved_audits || {},
+          supabaseActive,
+          tableMissing: false,
+          source: 'supabase'
+        });
+      }
+    } catch (err) {
+      console.error('Failed to read from Supabase, falling back to local file:', err);
+    }
+  }
+
+  // Fallback to local file
   try {
     if (fs.existsSync(DB_FILE)) {
       const content = fs.readFileSync(DB_FILE, 'utf-8');
       const data = JSON.parse(content);
-      return res.json(data);
+      return res.json({
+        companies: data.companies || [],
+        crmCompanyIds: data.crmCompanyIds || [],
+        savedAudits: data.saved_audits || {},
+        supabaseActive,
+        tableMissing,
+        source: 'local_file'
+      });
     }
   } catch (err) {
-    console.error('Failed to read database file:', err);
+    console.error('Failed to read local database file:', err);
   }
-  return res.json({ companies: [], crmCompanyIds: [], savedAudits: {} });
+
+  return res.json({
+    companies: [],
+    crmCompanyIds: [],
+    savedAudits: {},
+    supabaseActive,
+    tableMissing,
+    source: 'empty_fallback'
+  });
 });
 
 // Update database state
-app.post('/api/db', (req, res) => {
+app.post('/api/db', async (req, res) => {
+  const { companies, crmCompanyIds, savedAudits } = req.body;
+  const data = {
+    companies: companies || [],
+    crmCompanyIds: crmCompanyIds || [],
+    savedAudits: savedAudits || {}
+  };
+
+  const supabase = getSupabase();
+  const supabaseActive = !!supabase;
+  let savedToSupabase = false;
+  let tableMissing = false;
+
+  if (supabase) {
+    try {
+      const { error } = await supabase
+        .from('gmb_prospector_state')
+        .upsert({
+          id: 'default',
+          companies: data.companies,
+          crm_company_ids: data.crmCompanyIds,
+          saved_audits: data.savedAudits,
+          updated_at: new Date().toISOString()
+        });
+
+      if (error) {
+        if (error.code === '42P01') {
+          tableMissing = true;
+        }
+        console.error('Supabase upsert error:', error);
+        throw error;
+      }
+      savedToSupabase = true;
+    } catch (err) {
+      console.error('Failed to save to Supabase, writing to local file fallback:', err);
+    }
+  }
+
+  // Always write to local file as a local backup and fallback
   try {
-    const { companies, crmCompanyIds, savedAudits } = req.body;
-    const data = {
-      companies: companies || [],
-      crmCompanyIds: crmCompanyIds || [],
-      savedAudits: savedAudits || {}
-    };
     fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2), 'utf-8');
-    return res.json({ success: true });
+    return res.json({
+      success: true,
+      supabaseActive,
+      savedToSupabase,
+      tableMissing
+    });
   } catch (err: any) {
     console.error('Failed to write database file:', err);
-    return res.status(500).json({ error: `Erro ao salvar banco de dados: ${err.message}` });
+    return res.status(500).json({
+      error: `Erro ao salvar no arquivo local: ${err.message}`,
+      supabaseActive,
+      savedToSupabase,
+      tableMissing
+    });
   }
 });
 
