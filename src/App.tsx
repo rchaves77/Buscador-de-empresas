@@ -49,9 +49,17 @@ export default function App() {
 
   // Supabase states
   const [supabaseActive, setSupabaseActive] = useState(false);
+  const [supabaseUrl, setSupabaseUrl] = useState('');
   const [tableMissing, setTableMissing] = useState(false);
   const [dbSource, setDbSource] = useState('local_file');
   const [showSupabaseModal, setShowSupabaseModal] = useState(false);
+
+  // Supabase credentials input form states
+  const [inputUrl, setInputUrl] = useState('');
+  const [inputKey, setInputKey] = useState('');
+  const [isConnectingSupabase, setIsConnectingSupabase] = useState(false);
+  const [connectError, setConnectError] = useState('');
+  const [connectSuccess, setConnectSuccess] = useState('');
 
   // Active filters for company listing
   const [activeFilters, setActiveFilters] = useState({
@@ -62,6 +70,15 @@ export default function App() {
     gmbFilter: 'all'
   });
 
+  // Pre-populate Supabase credentials in form when modal is opened
+  useEffect(() => {
+    if (showSupabaseModal) {
+      setInputUrl(supabaseUrl || '');
+      setConnectError('');
+      setConnectSuccess('');
+    }
+  }, [showSupabaseModal, supabaseUrl]);
+
   // Load state from server-side database on mount (with localStorage fallback)
   useEffect(() => {
     const loadData = async () => {
@@ -69,11 +86,15 @@ export default function App() {
         const res = await fetch('/api/db');
         if (res.ok) {
           const serverData = await res.json();
-          const { companies: sCompanies, crmCompanyIds: sCrmIds, savedAudits: sAudits, supabaseActive: sActive, tableMissing: sTableMissing, source: sSource } = serverData;
+          const { companies: sCompanies, crmCompanyIds: sCrmIds, savedAudits: sAudits, supabaseActive: sActive, supabaseUrl: sUrl, tableMissing: sTableMissing, source: sSource } = serverData;
           
           if (sActive !== undefined) setSupabaseActive(sActive);
           if (sTableMissing !== undefined) setTableMissing(sTableMissing);
           if (sSource !== undefined) setDbSource(sSource);
+          if (sUrl !== undefined) {
+            setSupabaseUrl(sUrl);
+            setInputUrl(sUrl);
+          }
 
           if (Array.isArray(sCompanies)) {
             const validRealCompanies = sCompanies.filter(c => 
@@ -707,6 +728,99 @@ export default function App() {
                       {dbSource === 'supabase' ? 'Supabase Cloud ☁️' : 'Arquivo Local (.json) 💾'}
                     </span>
                   </div>
+                </div>
+              </div>
+
+              {/* Configure Connection Form */}
+              <div className="border border-indigo-100 rounded-xl p-5 bg-indigo-50/20 space-y-4">
+                <div className="flex items-center gap-2">
+                  <Database className="w-4 h-4 text-indigo-600" />
+                  <h4 className="font-bold text-slate-900 text-xs uppercase tracking-wider">Configurar Credenciais do Supabase</h4>
+                </div>
+                
+                <div className="space-y-3 text-xs">
+                  <div>
+                    <label className="block text-slate-700 font-semibold mb-1">Project URL (SUPABASE_URL):</label>
+                    <input
+                      type="text"
+                      value={inputUrl}
+                      onChange={(e) => setInputUrl(e.target.value)}
+                      placeholder="Ex: https://njcmsjgmnakmgvyrtbev.supabase.co"
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-slate-800 bg-white focus:outline-hidden focus:ring-2 focus:ring-indigo-500 font-mono text-xs"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-slate-700 font-semibold mb-1">Project API Key / Service Role (SUPABASE_KEY):</label>
+                    <input
+                      type="password"
+                      value={inputKey}
+                      onChange={(e) => setInputKey(e.target.value)}
+                      placeholder="Cole sua chave anon ou service_role aqui..."
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-slate-800 bg-white focus:outline-hidden focus:ring-2 focus:ring-indigo-500 font-mono text-xs"
+                    />
+                  </div>
+
+                  {connectError && (
+                    <div className="p-3 bg-red-50 border border-red-200 text-red-700 rounded-lg text-xs font-medium">
+                      ⚠️ {connectError}
+                    </div>
+                  )}
+
+                  {connectSuccess && (
+                    <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-700 rounded-lg text-xs font-medium">
+                      ✅ {connectSuccess}
+                    </div>
+                  )}
+
+                  <button
+                    type="button"
+                    disabled={isConnectingSupabase}
+                    onClick={async () => {
+                      if (!inputUrl || !inputKey) {
+                        setConnectError('Por favor, preencha a URL e a Chave do Supabase.');
+                        return;
+                      }
+                      setIsConnectingSupabase(true);
+                      setConnectError('');
+                      setConnectSuccess('');
+                      try {
+                        const response = await fetch('/api/setup-supabase', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ url: inputUrl, key: inputKey })
+                        });
+                        const resData = await response.json();
+                        if (response.ok && resData.success) {
+                          setSupabaseActive(true);
+                          setTableMissing(resData.tableMissing);
+                          setDbSource('supabase');
+                          setSupabaseUrl(inputUrl);
+                          setConnectSuccess(resData.message || 'Supabase conectado com sucesso!');
+                          
+                          // After connecting, immediately sync memory data to Supabase
+                          await fetch('/api/db', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                              companies,
+                              crmCompanyIds: Array.from(crmCompanyIds),
+                              savedAudits
+                            })
+                          });
+                        } else {
+                          setConnectError(resData.error || 'Erro ao conectar. Verifique as credenciais.');
+                        }
+                      } catch (err: any) {
+                        setConnectError(`Falha na requisição: ${err.message}`);
+                      } finally {
+                        setIsConnectingSupabase(false);
+                      }
+                    }}
+                    className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 text-white rounded-lg text-xs font-bold transition-all shadow-md flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    {isConnectingSupabase ? 'Conectando...' : 'Conectar e Sincronizar Agora ⚡'}
+                  </button>
                 </div>
               </div>
 

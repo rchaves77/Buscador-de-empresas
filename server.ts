@@ -75,6 +75,7 @@ app.get('/api/db', async (req, res) => {
           crmCompanyIds: data.crm_company_ids || [],
           savedAudits: data.saved_audits || {},
           supabaseActive,
+          supabaseUrl: process.env.SUPABASE_URL || '',
           tableMissing: false,
           source: 'supabase'
         });
@@ -94,6 +95,7 @@ app.get('/api/db', async (req, res) => {
         crmCompanyIds: data.crmCompanyIds || [],
         savedAudits: data.saved_audits || {},
         supabaseActive,
+        supabaseUrl: process.env.SUPABASE_URL || '',
         tableMissing,
         source: 'local_file'
       });
@@ -107,9 +109,70 @@ app.get('/api/db', async (req, res) => {
     crmCompanyIds: [],
     savedAudits: {},
     supabaseActive,
+    supabaseUrl: process.env.SUPABASE_URL || '',
     tableMissing,
     source: 'empty_fallback'
   });
+});
+
+// Configure Supabase dynamically from the UI
+app.post('/api/setup-supabase', async (req, res) => {
+  const { url, key } = req.body;
+  if (!url || !key) {
+    return res.status(400).json({ error: 'URL e Chave são obrigatórias.' });
+  }
+
+  try {
+    const formattedUrl = url.trim();
+    const formattedKey = key.trim();
+
+    // 1. Write to .env file
+    const envContent = `SUPABASE_URL="${formattedUrl}"\nSUPABASE_KEY="${formattedKey}"\n`;
+    fs.writeFileSync(path.join(process.cwd(), '.env'), envContent, 'utf-8');
+
+    // 2. Update process.env in-memory immediately
+    process.env.SUPABASE_URL = formattedUrl;
+    process.env.SUPABASE_KEY = formattedKey;
+
+    // 3. Force re-initialization of the Supabase client
+    supabaseClient = null;
+    const supabase = getSupabase();
+
+    if (!supabase) {
+      return res.status(400).json({ error: 'Falha ao inicializar o cliente Supabase com as chaves fornecidas.' });
+    }
+
+    // 4. Test connection by fetching the row
+    const { error } = await supabase
+      .from('gmb_prospector_state')
+      .select('id')
+      .eq('id', 'default')
+      .maybeSingle();
+
+    let tableMissing = false;
+    if (error) {
+      if (error.code === '42P01') {
+        tableMissing = true;
+      } else {
+        console.error('Supabase connection test error:', error);
+        return res.json({
+          success: true,
+          message: 'Credenciais salvas, mas houve um erro ao testar a conexão.',
+          error: error.message,
+          tableMissing: false
+        });
+      }
+    }
+
+    return res.json({
+      success: true,
+      message: 'Supabase conectado com sucesso!',
+      tableMissing
+    });
+  } catch (err: any) {
+    console.error('Failed to setup Supabase:', err);
+    return res.status(500).json({ error: `Erro ao configurar o Supabase: ${err.message}` });
+  }
 });
 
 // Update database state
